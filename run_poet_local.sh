@@ -7,11 +7,11 @@ fi
 
 experiment=poet_$1
 
-mkdir -p ~/ipp/$experiment
-mkdir -p ~/logs/$experiment
+mkdir -p ./ipp/$experiment
+mkdir -p ./logs/$experiment
 
 python -u master.py \
-  ~/logs/$experiment \
+  ./logs/$experiment \
   --init=random \
   --learning_rate=0.01 \
   --lr_decay=0.9999 \
@@ -32,4 +32,4 @@ python -u master.py \
   --propose_with_adam \
   --steps_before_transfer=25 \
   --num_workers 10 \
-  --n_iterations=60000 2>&1 | tee ~/ipp/$experiment/run.log
+  --n_iterations=60000 2>&1 | tee ./ipp/$experiment/run.log
