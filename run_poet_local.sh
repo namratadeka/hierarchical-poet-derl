@@ -7,11 +7,11 @@ fi
 
 experiment=poet_$1
 
-mkdir -p ~/ipp/$experiment
-mkdir -p ~/logs/$experiment
+mkdir -p ./ipp/$experiment
+mkdir -p ./logs/$experiment
 
 python -u master.py \
-  ~/logs/$experiment \
+  ./logs/$experiment \
   --init=random \
   --learning_rate=0.01 \
   --lr_decay=0.9999 \
@@ -28,8 +28,8 @@ python -u master.py \
   --returns_normalization=centered_ranks \
   --envs stump pit roughness \
   --max_num_envs=25 \
-  --adjust_interval=8 \
+  --adjust_interval=1 \
   --propose_with_adam \
-  --steps_before_transfer=25 \
+  --steps_before_transfer=1 \
   --num_workers 10 \
-  --n_iterations=50000 2>&1 | tee ~/ipp/$experiment/run.log
+  --n_iterations=50000 2>&1 | tee ./ipp/$experiment/run.log
