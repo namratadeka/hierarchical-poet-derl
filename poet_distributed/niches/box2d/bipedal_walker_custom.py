@@ -66,8 +66,6 @@ HULL_POLY = [
     (-30, +9), (+6, +9), (+34, +1),
     (+34, -8), (-30, -8)
 ]
-LEG_DOWN = -8 / SCALE
-LEG_W, LEG_H = 8 / SCALE, 34 / SCALE
 
 VIEWPORT_W = 600
 VIEWPORT_H = 400
@@ -87,20 +85,6 @@ HULL_FD = fixtureDef(
     categoryBits=0x0020,
     maskBits=0x001,  # collide only with ground
     restitution=0.0)  # 0.99 bouncy
-
-LEG_FD = fixtureDef(
-    shape=polygonShape(box=(LEG_W / 2, LEG_H / 2)),
-    density=1.0,
-    restitution=0.0,
-    categoryBits=0x0020,
-    maskBits=0x001)
-
-LOWER_FD = fixtureDef(
-    shape=polygonShape(box=(0.8 * LEG_W / 2, LEG_H / 2)),
-    density=1.0,
-    restitution=0.0,
-    categoryBits=0x0020,
-    maskBits=0x001)
 
 
 class ContactDetector(contactListener):
@@ -134,6 +118,7 @@ class BipedalWalkerCustom(gym.Env):
         self.spec = None
         self.set_env_config(env_config)
         self.env_seed = None
+        self.scale_vector = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float)
         self._seed()
         self.viewer = None
 
@@ -165,6 +150,9 @@ class BipedalWalkerCustom(gym.Env):
 
     def set_env_config(self, env_config):
         self.config = env_config
+
+    def set_morphology(self, params):
+        self.scale_vector = np.copy(np.array(params, dtype=np.float))
 
     def _set_terrain_number(self):
         self.hardcore = False
@@ -401,8 +389,52 @@ class BipedalWalkerCustom(gym.Env):
         self._generate_terrain(self.hardcore)
         self._generate_clouds()
 
+        # orig parameters
+        # LEG_DOWN = -8/SCALE
+        # LEG_W, LEG_H = 8/SCALE, 34/SCALE
+
+        # new parameters
+        U = 1.0 / SCALE
+        LEG_DOWN = -8 * U
+        #LEG_W = 1.0*8/SCALE
+        #LEG_H = 1.0*34/SCALE # maybe make one for each leg?
+
+        def calculate_total_area(x):
+          return x[0]*x[1]+x[2]*x[3]+x[4]*x[5]+x[6]*x[7]
+
+        def calculate_height(x): # returns height of shorter leg
+          return np.minimum(x[1]+x[3], x[5]+x[7])
+
+        body_param = [8.0, 34.0, 6.4, 34.0, 8.0, 34.0, 6.4, 34.0]
+        # if self.smalllegs:
+        #   self.orig_leg_area = calculate_total_area(body_param)
+        # if self.talllegs:
+        #   self.orig_leg_height = calculate_height(body_param)
+
+        for i in range(len(body_param)):
+          body_param[i] = body_param[i]*self.scale_vector[i]
+
+        # if self.smalllegs:
+        #   self.leg_area = calculate_total_area(body_param)
+        #   self.reward_factor = 1.0+np.log(self.orig_leg_area/self.leg_area)
+        # if self.talllegs:
+        #   self.leg_height = calculate_height(body_param)
+        #   self.reward_factor = 1.0+np.log(self.leg_height/self.orig_leg_height)
+
+        leg1_w_top = body_param[0]*U
+        leg1_h_top = body_param[1]*U
+
+        leg1_w_bot = body_param[2]*U
+        leg1_h_bot = body_param[3]*U
+
+        leg2_w_top = body_param[4]*U
+        leg2_h_top = body_param[5]*U
+
+        leg2_w_bot = body_param[6]*U
+        leg2_h_bot = body_param[7]*U
+
         init_x = TERRAIN_STEP * TERRAIN_STARTPAD / 2
-        init_y = TERRAIN_HEIGHT + 2 * LEG_H
+        init_y = TERRAIN_HEIGHT+np.maximum(leg1_h_top+leg1_h_bot, leg2_h_top+leg2_h_bot)
         self.hull = self.world.CreateDynamicBody(
             position=(init_x, init_y),
             fixtures=HULL_FD
@@ -415,10 +447,26 @@ class BipedalWalkerCustom(gym.Env):
         self.legs = []
         self.joints = []
         for i in [-1, +1]:
+            if i == -1:
+                leg_w_top = leg1_w_top
+                leg_w_bot = leg1_w_bot
+                leg_h_top = leg1_h_top
+                leg_h_bot = leg1_h_bot
+            else:
+                leg_w_top = leg2_w_top
+                leg_w_bot = leg2_w_bot
+                leg_h_top = leg2_h_top
+                leg_h_bot = leg2_h_bot
+            
             leg = self.world.CreateDynamicBody(
-                position=(init_x, init_y - LEG_H / 2 - LEG_DOWN),
+                position=(init_x, init_y - leg_h_top / 2 - LEG_DOWN),
                 angle=(i * 0.05),
-                fixtures=LEG_FD
+                fixtures=fixtureDef(
+                            shape=polygonShape(box=(leg_w_top/2, leg_h_top/2)),
+                            density=1.0,
+                            restitution=0.0,
+                            categoryBits=0x0020,
+                            maskBits=0x001)
             )
             leg.color1 = (0.6 - i / 10., 0.3 - i / 10., 0.5 - i / 10.)
             leg.color2 = (0.4 - i / 10., 0.2 - i / 10., 0.3 - i / 10.)
@@ -426,7 +474,7 @@ class BipedalWalkerCustom(gym.Env):
                 bodyA=self.hull,
                 bodyB=leg,
                 localAnchorA=(0, LEG_DOWN),
-                localAnchorB=(0, LEG_H / 2),
+                localAnchorB=(0, leg_h_top / 2),
                 enableMotor=True,
                 enableLimit=True,
                 maxMotorTorque=MOTORS_TORQUE,
@@ -438,17 +486,22 @@ class BipedalWalkerCustom(gym.Env):
             self.joints.append(self.world.CreateJoint(rjd))
 
             lower = self.world.CreateDynamicBody(
-                position=(init_x, init_y - LEG_H * 3 / 2 - LEG_DOWN),
+                position=(init_x, init_y - leg_h_top - leg_h_bot/2 - LEG_DOWN),
                 angle=(i * 0.05),
-                fixtures=LOWER_FD
+                fixtures=fixtureDef(
+                            shape=polygonShape(box=(leg_w_bot/2, leg_h_bot/2)),
+                            density=1.0,
+                            restitution=0.0,
+                            categoryBits=0x0020,
+                            maskBits=0x001)
             )
             lower.color1 = (0.6 - i / 10., 0.3 - i / 10., 0.5 - i / 10.)
             lower.color2 = (0.4 - i / 10., 0.2 - i / 10., 0.3 - i / 10.)
             rjd = revoluteJointDef(
                 bodyA=leg,
                 bodyB=lower,
-                localAnchorA=(0, -LEG_H / 2),
-                localAnchorB=(0, LEG_H / 2),
+                localAnchorA=(0, -leg_h_top / 2),
+                localAnchorB=(0, leg_h_bot / 2),
                 enableMotor=True,
                 enableLimit=True,
                 maxMotorTorque=MOTORS_TORQUE,
