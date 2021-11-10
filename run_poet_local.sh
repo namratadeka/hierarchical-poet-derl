@@ -31,5 +31,5 @@ python -u master.py \
   --adjust_interval=1 \
   --propose_with_adam \
   --steps_before_transfer=1 \
-  --num_workers 10 \
+  --num_workers 32 \
   --n_iterations=50000 2>&1 | tee ./ipp/$experiment/run.log

@@ -111,7 +111,7 @@ class MultiESOptimizer:
 
             self.add_optimizer(env=env, seed=args.master_seed)
 
-    def create_optimizer(self, env, seed, created_at=0, model_params=None, is_candidate=False):
+    def create_optimizer(self, env, seed, created_at=0, model_params=None, is_candidate=False, max_num_morphs=1):
 
         assert env != None
 
@@ -119,16 +119,16 @@ class MultiESOptimizer:
 
         niche = niche_fn()
         thetas = []
-        for i in range(self.args.max_num_morphs):
+        for i in range(max_num_morphs):
             if model_params is not None:
-                theta = np.array(model_params)
+                thetas = np.array(model_params)
             else:
                 theta=niche.initial_theta()
-            thetas.append(theta)
+                thetas.append(theta)
         assert optim_id not in self.optimizers.keys()
 
         es_optimizers = []
-        for i in range(self.args.max_num_morphs):
+        for i in range(max_num_morphs):
             es_optimizers.append(ESOptimizer(
                 optim_id=optim_id,
                 fiber_pool=self.fiber_pool,
@@ -160,7 +160,7 @@ class MultiESOptimizer:
             creat a new optimizer/niche
             created_at: the iteration when this niche is created
         '''
-        o = self.create_optimizer(env, seed, created_at, model_params)
+        o = self.create_optimizer(env, seed, created_at, model_params, max_num_morphs=self.args.max_num_morphs)
         optim_id = o[0].optim_id
         self.optimizers[optim_id] = o
 
@@ -190,7 +190,6 @@ class MultiESOptimizer:
             tasks = [o.start_step() for o in opt_list]
 
             for optimizer, task in zip(opt_list, tasks):
-
                 optimizer.theta, stats = optimizer.get_step(task)
                 self_eval_task = optimizer.start_theta_eval(optimizer.theta)
                 self_eval_stats = optimizer.get_theta_eval(self_eval_task)
@@ -303,7 +302,7 @@ class MultiESOptimizer:
             new_env_config, seed, parent_optim_id = self.get_new_env(parent_list)
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
-                opt_list = self.create_optimizer(new_env_config, seed, is_candidate=True)
+                opt_list = self.create_optimizer(new_env_config, seed, is_candidate=True, max_num_morphs=self.args.max_num_morphs)
                 scores = []
                 for i in range(len(opt_list)):
                     scores.append(opt_list[i].evaluate_theta(self.optimizers[parent_optim_id][i].theta))
@@ -338,13 +337,14 @@ class MultiESOptimizer:
             for child in child_list:
                 new_env_config, seed, _, _ = child
                 # targeted transfer
-                import pdb; pdb.set_trace()
-                o = self.create_optimizer(new_env_config, seed, is_candidate=True)
-                import pdb; pdb.set_trace()
-                score_child, theta_child = o.evaluate_transfer(self.optimizers)
+                o = self.create_optimizer(new_env_config, seed, is_candidate=True)[0]
+                parent_opts = []
+                for opt_list in self.optimizers.values():
+                    parent_opts += opt_list
+                score_children, theta_children = o.evaluate_population_transfer(parent_opts, self.args.max_num_morphs)
                 del o
-                if self.pass_mc(score_child):  # check mc
-                    self.add_optimizer(env=new_env_config, seed=seed, created_at=iteration, model_params=np.array(theta_child))
+                if self.pass_mc(np.mean(score_children)):  # check mc
+                    self.add_optimizer(env=new_env_config, seed=seed, created_at=iteration, model_params=np.array(theta_children))
                     admitted += 1
                     if admitted >= max_admitted:
                         break
@@ -370,8 +370,9 @@ class MultiESOptimizer:
                  checkpointing=False,
                  reset_optimizer=True):
 
+        from datetime import datetime
         for iteration in range(iterations):
-
+            start = datetime.now()
             self.adjust_envs_niches(iteration, self.args.adjust_interval * steps_before_transfer,
                                     max_num_envs=self.args.max_num_envs)
 
@@ -381,13 +382,16 @@ class MultiESOptimizer:
 
             self.ind_es_step(iteration=iteration)
 
-            if len(self.optimizers) > 1 and iteration % steps_before_transfer == 0:
-                import pdb; pdb.set_trace()
-                self.transfer(propose_with_adam=propose_with_adam,
-                              checkpointing=checkpointing,
-                              reset_optimizer=reset_optimizer)
+            # if len(self.optimizers) > 1 and iteration % steps_before_transfer == 0:
+            #     self.transfer(propose_with_adam=propose_with_adam,
+            #                   checkpointing=checkpointing,
+            #                   reset_optimizer=reset_optimizer)
 
             if iteration % steps_before_transfer == 0:
                 for opt_list in self.optimizers.values():
                     for o in opt_list:
                         o.save_to_logger(iteration)
+            
+            end = datetime.now()
+            seconds = (end - start).total_seconds()
+            logger.info("Iteration {} took {} seconds.".format(iteration, seconds))

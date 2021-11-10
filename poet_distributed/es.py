@@ -571,7 +571,6 @@ class ESOptimizer:
         self_eval_stats = self.get_theta_eval(self_eval_task)
         return self_eval_stats.eval_returns_mean
 
-
     def evaluate_transfer(self, optimizers, propose_with_adam=False):
 
         best_init_score = None
@@ -592,3 +591,26 @@ class ESOptimizer:
                 best_init_theta = np.array(proposed_theta)
 
         return best_init_score, best_init_theta
+
+    def evaluate_population_transfer(self, optimizers, max_num_population, propose_with_adam=False):
+        scores = []
+        thetas = []
+
+        for source_optim in optimizers:
+            score = self.evaluate_theta(source_optim.theta)
+            scores.append(score)
+            thetas.append(source_optim.theta)
+
+            task = self.start_step(source_optim.theta)
+            proposed_theta, _ = self.get_step(
+                task, propose_with_adam=propose_with_adam, propose_only=True
+            )
+            score = self.evaluate_theta(proposed_theta)
+            scores.append(score)
+            thetas.append(proposed_theta)
+
+        sorted_indices = np.argsort(scores)
+        best_scores = np.array(scores)[sorted_indices][-max_num_population:][::-1]
+        best_thetas = np.array(thetas)[sorted_indices][-max_num_population:][::-1]        
+
+        return best_scores, best_thetas
