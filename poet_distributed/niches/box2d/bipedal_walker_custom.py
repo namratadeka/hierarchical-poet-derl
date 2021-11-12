@@ -118,7 +118,7 @@ class BipedalWalkerCustom(gym.Env):
         self.spec = None
         self.set_env_config(env_config)
         self.env_seed = None
-        self.scale_vector = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float)
+        self.scale_vector = np.ones(8, dtype=np.float32)
         self._seed()
         self.viewer = None
 
@@ -152,7 +152,7 @@ class BipedalWalkerCustom(gym.Env):
         self.config = env_config
 
     def set_morphology(self, params):
-        self.scale_vector = np.copy(np.array(params, dtype=np.float))
+        self.scale_vector = np.copy(np.array(params, dtype=np.float32))
 
     def _set_terrain_number(self):
         self.hardcore = False

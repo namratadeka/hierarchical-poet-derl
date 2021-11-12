@@ -14,13 +14,13 @@
 
 
 class Niche:
-    def rollout_batch(self, thetas, batch_size, random_state, eval=False):
+    def rollout_batch(self, thetas, morph_params, batch_size, random_state, eval=False):
         import numpy as np
         returns = np.zeros(batch_size)
         lengths = np.zeros(batch_size, dtype='int')
 
         for i, theta in enumerate(thetas):
             returns[i], lengths[i] = self.rollout(
-                theta, random_state=random_state, eval=eval)
+                theta, morph_params, random_state=random_state, eval=eval)
 
         return returns, lengths

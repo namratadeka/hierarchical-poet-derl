@@ -111,13 +111,19 @@ class MultiESOptimizer:
 
             self.add_optimizer(env=env, seed=args.master_seed)
 
-    def create_optimizer(self, env, seed, created_at=0, model_params=None, is_candidate=False, max_num_morphs=1):
+    def create_optimizer(self, env, seed, morph_configs=None, created_at=0, model_params=None, is_candidate=False, max_num_morphs=1):
 
         assert env != None
 
         optim_id, niche_fn = construct_niche_fns_from_env(args=self.args, env=env, seed=seed)
-
         niche = niche_fn()
+
+        size = (max_num_morphs, 8)
+        if morph_configs is not None:
+            morph_params = np.array(morph_configs)
+        else:
+            morph_params = np.array(np.random.uniform(0.25, 1.75, size), dtype=np.float32)
+
         thetas = []
         for i in range(max_num_morphs):
             if model_params is not None:
@@ -125,6 +131,7 @@ class MultiESOptimizer:
             else:
                 theta=niche.initial_theta()
                 thetas.append(theta)
+
         assert optim_id not in self.optimizers.keys()
 
         es_optimizers = []
@@ -133,6 +140,7 @@ class MultiESOptimizer:
                 optim_id=optim_id,
                 fiber_pool=self.fiber_pool,
                 fiber_shared=self.fiber_shared,
+                morph_params=morph_params[i],
                 theta=thetas[i],
                 make_niche=niche_fn,
                 learning_rate=self.args.learning_rate,
@@ -155,12 +163,12 @@ class MultiESOptimizer:
         return es_optimizers
 
 
-    def add_optimizer(self, env, seed, created_at=0, model_params=None):
+    def add_optimizer(self, env, seed, morph_configs=None, created_at=0, model_params=None):
         '''
             creat a new optimizer/niche
             created_at: the iteration when this niche is created
         '''
-        o = self.create_optimizer(env, seed, created_at, model_params, max_num_morphs=self.args.max_num_morphs)
+        o = self.create_optimizer(env, seed, morph_configs, created_at, model_params, max_num_morphs=self.args.max_num_morphs)
         optim_id = o[0].optim_id
         self.optimizers[optim_id] = o
 
@@ -302,7 +310,8 @@ class MultiESOptimizer:
             new_env_config, seed, parent_optim_id = self.get_new_env(parent_list)
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
-                opt_list = self.create_optimizer(new_env_config, seed, is_candidate=True, max_num_morphs=self.args.max_num_morphs)
+                morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
+                opt_list = self.create_optimizer(new_env_config, seed, morph_params, is_candidate=True, max_num_morphs=self.args.max_num_morphs)
                 scores = []
                 for i in range(len(opt_list)):
                     scores.append(opt_list[i].evaluate_theta(self.optimizers[parent_optim_id][i].theta))
@@ -335,16 +344,18 @@ class MultiESOptimizer:
             #print(child_list)
             admitted = 0
             for child in child_list:
-                new_env_config, seed, _, _ = child
+                new_env_config, seed, parent_optim_id, _ = child
+                morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
                 # targeted transfer
-                o = self.create_optimizer(new_env_config, seed, is_candidate=True)[0]
+                o = self.create_optimizer(new_env_config, seed, morph_params, is_candidate=True)[0]
                 parent_opts = []
                 for opt_list in self.optimizers.values():
                     parent_opts += opt_list
                 score_children, theta_children = o.evaluate_population_transfer(parent_opts, self.args.max_num_morphs)
                 del o
                 if self.pass_mc(np.mean(score_children)):  # check mc
-                    self.add_optimizer(env=new_env_config, seed=seed, created_at=iteration, model_params=np.array(theta_children))
+                    self.add_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params,
+                        created_at=iteration, model_params=np.array(theta_children))
                     admitted += 1
                     if admitted >= max_admitted:
                         break
