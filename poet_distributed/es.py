@@ -598,11 +598,13 @@ class ESOptimizer:
     def evaluate_population_transfer(self, optimizers, max_num_population, propose_with_adam=False):
         scores = []
         thetas = []
+        morph_params = []
 
         for source_optim in optimizers:
             score = self.evaluate_theta(source_optim.theta)
             scores.append(score)
             thetas.append(source_optim.theta)
+            morph_params.append(source_optim.morph_params)
 
             task = self.start_step(source_optim.theta)
             proposed_theta, _ = self.get_step(
@@ -611,9 +613,11 @@ class ESOptimizer:
             score = self.evaluate_theta(proposed_theta)
             scores.append(score)
             thetas.append(proposed_theta)
+            morph_params.append(source_optim.morph_params)
 
         sorted_indices = np.argsort(scores)
         best_scores = np.array(scores)[sorted_indices][-max_num_population:][::-1]
-        best_thetas = np.array(thetas)[sorted_indices][-max_num_population:][::-1]        
+        best_thetas = np.array(thetas)[sorted_indices][-max_num_population:][::-1]    
+        best_morph_params = np.array(morph_params[sorted_indices][-max_num_population:][::-1])    
 
-        return best_scores, best_thetas
+        return best_scores, best_thetas, best_morph_params

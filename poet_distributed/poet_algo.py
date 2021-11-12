@@ -65,6 +65,7 @@ class MultiESOptimizer:
         self.env_archive = OrderedDict()
         self.env_reproducer = Reproducer(args)
         self.optimizers = OrderedDict()
+        self.env_seeds = OrderedDict()
 
         if args.start_from:
             logger.debug("args.start_from {}".format(args.start_from))
@@ -111,31 +112,34 @@ class MultiESOptimizer:
 
             self.add_optimizer(env=env, seed=args.master_seed)
 
-    def create_optimizer(self, env, seed, morph_configs=None, created_at=0, model_params=None, is_candidate=False, max_num_morphs=1):
+    def create_optimizer(self, env, seed, morph_configs=None, created_at=0, model_params=None, 
+        is_candidate=False):
 
         assert env != None
 
         optim_id, niche_fn = construct_niche_fns_from_env(args=self.args, env=env, seed=seed)
         niche = niche_fn()
 
-        size = (max_num_morphs, 8)
         if morph_configs is not None:
             morph_params = np.array(morph_configs)
         else:
+            size = (self.args.init_num_morphs, 8)
             morph_params = np.array(np.random.uniform(0.25, 1.75, size), dtype=np.float32)
 
+        num_agents = len(morph_params)
+
         thetas = []
-        for i in range(max_num_morphs):
+        for i in range(num_agents):
             if model_params is not None:
                 thetas = np.array(model_params)
             else:
                 theta=niche.initial_theta()
                 thetas.append(theta)
 
-        assert optim_id not in self.optimizers.keys()
+        # assert optim_id not in self.optimizers.keys()
 
         es_optimizers = []
-        for i in range(max_num_morphs):
+        for i in range(num_agents):
             es_optimizers.append(ESOptimizer(
                 optim_id=optim_id,
                 fiber_pool=self.fiber_pool,
@@ -168,7 +172,7 @@ class MultiESOptimizer:
             creat a new optimizer/niche
             created_at: the iteration when this niche is created
         '''
-        o = self.create_optimizer(env, seed, morph_configs, created_at, model_params, max_num_morphs=self.args.max_num_morphs)
+        o = self.create_optimizer(env, seed, morph_configs, created_at, model_params)
         optim_id = o[0].optim_id
         self.optimizers[optim_id] = o
 
@@ -176,6 +180,7 @@ class MultiESOptimizer:
         assert optim_id not in self.env_archive.keys()
         self.env_registry[optim_id] = env
         self.env_archive[optim_id] = env
+        self.env_seeds[optim_id] = seed
         #dump the env
         log_file = self.args.log_file
         env_config_file = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '.env.json'
@@ -249,7 +254,7 @@ class MultiESOptimizer:
         for o in self.optimizers.values():
             o.pick_proposal(checkpointing, reset_optimizer)
 
-    def check_optimizer_status(self, iteration):
+    def check_optimizer_status(self):
         '''
             return two lists
         '''
@@ -311,7 +316,7 @@ class MultiESOptimizer:
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
                 morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
-                opt_list = self.create_optimizer(new_env_config, seed, morph_params, is_candidate=True, max_num_morphs=self.args.max_num_morphs)
+                opt_list = self.create_optimizer(new_env_config, seed, morph_params, is_candidate=True)
                 scores = []
                 for i in range(len(opt_list)):
                     scores.append(opt_list[i].evaluate_theta(self.optimizers[parent_optim_id][i].theta))
@@ -328,7 +333,7 @@ class MultiESOptimizer:
     def adjust_envs_niches(self, iteration, steps_before_adjust, max_num_envs=None, max_children=8, max_admitted=1):
 
         if iteration > 0 and iteration % steps_before_adjust == 0:
-            list_repro, list_delete = self.check_optimizer_status(iteration)
+            list_repro, list_delete = self.check_optimizer_status()
             if len(list_repro) == 0:
                 return
 
@@ -345,16 +350,16 @@ class MultiESOptimizer:
             admitted = 0
             for child in child_list:
                 new_env_config, seed, parent_optim_id, _ = child
-                morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
+                morph_params = self.optimizers[parent_optim_id][0].morph_params
                 # targeted transfer
                 o = self.create_optimizer(new_env_config, seed, morph_params, is_candidate=True)[0]
                 parent_opts = []
                 for opt_list in self.optimizers.values():
                     parent_opts += opt_list
-                score_children, theta_children = o.evaluate_population_transfer(parent_opts, self.args.max_num_morphs)
+                score_children, theta_children, morph_params_children = o.evaluate_population_transfer(parent_opts, self.args.max_num_morphs)
                 del o
                 if self.pass_mc(np.mean(score_children)):  # check mc
-                    self.add_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params,
+                    self.add_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params_children,
                         created_at=iteration, model_params=np.array(theta_children))
                     admitted += 1
                     if admitted >= max_admitted:
@@ -375,6 +380,70 @@ class MultiESOptimizer:
         for optim_id in list_delete:
             self.delete_optimizer(optim_id)
 
+    def remove_oldest_agents(self, optim_id, num_removals):
+        list_delete = self.optimizers[optim_id][:num_removals]
+        for agent in list_delete:
+            logger.info("Deleting agent: {} from env: {}".format(agent.morph_id, optim_id))
+            self.optimizers[optim_id].remove(agent)
+    
+    def add_agents_to_env(self, optim_id, agents):
+        num_agents = len(self.optimizers[optim_id])
+        if num_agents + len(agents) <= self.args.max_num_morphs:
+            self.optimizers[optim_id] += agents
+        else:
+            num_removals = num_agents + len(agents) - self.args.max_num_morphs
+            self.remove_oldest_agents(optim_id, num_removals)
+            self.optimizers[optim_id] += agents
+
+    def mutate_morph_params(self, params):
+        child_params = np.copy(np.array(params, dtype=np.float32))
+        lengthen = np.random.choice(2)
+        if lengthen:
+            eps = np.random.uniform(1, 2)
+        else:
+            eps = np.random.uniform(0, 1)
+        child_params[1] *= eps
+        child_params[3] *= eps
+        child_params[5] *= eps
+        child_params[7] *= eps
+
+        widen = np.random.choice(2)
+        if widen:
+            eps = np.random.uniform(1, 2)
+        else:
+            eps = np.random.uniform(0, 1)
+        child_params[0] *= eps
+        child_params[2] *= eps
+        child_params[4] *= eps
+        child_params[6] *= eps
+
+        child_params[child_params > 1.75] = 1.75
+        child_params[child_params < 0.25] = 0.25
+
+        return child_params
+
+    def evolve_morphology(self):
+        for optim_id in self.optimizers:
+            agents = self.optimizers[optim_id]
+            groups = np.random.choice(agents, (len(agents)//4, 4), replace=False)
+            fittest_scores = -np.inf*np.ones(len(groups))
+            fittest_agents = len(groups) * [None]
+            for k, group in enumerate(groups):
+                for i in range(len(group)):
+                    score = group[i].evaluate_theta(group[i].theta)
+                    if score > fittest_scores[k]:
+                        fittest_scores[k] = score
+                        fittest_agents[k] = group[i]
+                        
+            child_morph_params = []
+            for agent in fittest_agents:
+                parent_morph_params = agent.morph_params
+                child_morph_params.append(self.mutate_morph_params(parent_morph_params))
+
+            child_list = self.create_optimizer(env=self.env_registry[optim_id], 
+                seed=self.env_seeds[optim_id], morph_configs=child_morph_params)
+            self.add_agents_to_env(optim_id, child_list)
+            
     def optimize(self, iterations=200,
                  steps_before_transfer=25,
                  propose_with_adam=False,
@@ -390,6 +459,9 @@ class MultiESOptimizer:
             for opt_list in self.optimizers.values():
                 for o in opt_list:
                     o.clean_dicts_before_iter()
+
+            if iteration > 0 and iteration % self.args.morph_evolve_interval == 0:
+                self.evolve_morphology()
 
             self.ind_es_step(iteration=iteration)
 

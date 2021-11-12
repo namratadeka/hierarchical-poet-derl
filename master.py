@@ -56,9 +56,9 @@ def main():
     parser.add_argument('--n_iterations', type=int, default=200)
     parser.add_argument('--steps_before_transfer', type=int, default=25)
     parser.add_argument('--master_seed', type=int, default=111)
-    parser.add_argument('--mc_lower', type=int, default=-300)
-    parser.add_argument('--mc_upper', type=int, default=0)
-    parser.add_argument('--repro_threshold', type=int, default=-200)
+    parser.add_argument('--mc_lower', type=int, default=25)
+    parser.add_argument('--mc_upper', type=int, default=300)
+    parser.add_argument('--repro_threshold', type=int, default=200)
     parser.add_argument('--max_num_envs', type=int, default=100)
     parser.add_argument('--normalize_grads_by_noise_std', action='store_true', default=False)
     parser.add_argument('--propose_with_adam', action='store_true', default=False)
@@ -68,7 +68,9 @@ def main():
     parser.add_argument('--stochastic', action='store_true', default=False)
     parser.add_argument('--envs', nargs='+')
     parser.add_argument('--start_from', default=None)  # Json file to start from
-    parser.add_argument('--max_num_morphs', type=int, default=2)
+    parser.add_argument('--max_num_morphs', type=int, default=10)
+    parser.add_argument('--morph_evolve_interval', type=int, default=4)
+    parser.add_argument('--init_num_morphs', type=int, default=4)
 
     args = parser.parse_args()
     logger.info(args)
