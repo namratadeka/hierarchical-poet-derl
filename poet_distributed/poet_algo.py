@@ -124,7 +124,12 @@ class MultiESOptimizer:
             morph_params = np.array(morph_configs)
         else:
             size = (self.args.init_num_morphs, 8)
-            morph_params = np.array(np.random.uniform(0.25, 1.75, size), dtype=np.float32)
+            morph_params = np.ones(size, dtype=np.float32)
+            for i in range(size[0]):
+                length_scale = np.random.uniform(0.25, 1.75)
+                width_scale = np.random.uniform(0.25, 1.75)
+                morph_params[i, np.array([1, 3, 5, 7])] = length_scale
+                morph_params[i, np.array([0, 2, 4, 6])] = width_scale
 
         num_agents = len(morph_params)
 
@@ -470,10 +475,10 @@ class MultiESOptimizer:
             #                   checkpointing=checkpointing,
             #                   reset_optimizer=reset_optimizer)
 
-            if iteration % steps_before_transfer == 0:
-                for opt_list in self.optimizers.values():
-                    for o in opt_list:
-                        o.save_to_logger(iteration)
+            # if iteration % steps_before_transfer == 0:
+            for opt_list in self.optimizers.values():
+                for o in opt_list:
+                    o.save_to_logger(iteration)
             
             end = datetime.now()
             seconds = (end - start).total_seconds()
