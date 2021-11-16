@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 import numpy as np
 from poet_distributed.es import initialize_master_fiber
 from poet_distributed.poet_algo import MultiESOptimizer
+from poet_distributed.poet_ppo_algo import MutliPPOOptimizer
 
 
 def run_main(args):
@@ -29,7 +30,8 @@ def run_main(args):
     #set master_seed
     np.random.seed(args.master_seed)
 
-    optimizer_zoo = MultiESOptimizer(args=args)
+    # optimizer_zoo = MultiESOptimizer(args=args)
+    optimizer_zoo = MutliPPOOptimizer(args=args)
 
     optimizer_zoo.optimize(iterations=args.n_iterations,
                        propose_with_adam=args.propose_with_adam,
@@ -52,7 +54,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--eval_batch_size', type=int, default=1)
     parser.add_argument('--eval_batches_per_step', type=int, default=50)
-    parser.add_argument('--num_workers', type=int, default=20)
+    parser.add_argument('--num_workers', type=int, default=32)
     parser.add_argument('--n_iterations', type=int, default=200)
     parser.add_argument('--steps_before_transfer', type=int, default=25)
     parser.add_argument('--master_seed', type=int, default=111)
