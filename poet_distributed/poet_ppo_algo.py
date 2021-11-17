@@ -51,7 +51,7 @@ class MutliPPOOptimizer(object):
 
         self.add_optimizer(env=env, seed=args.master_seed)
 
-    def create_optimizer(self, env, seed, morph_configs, created_at):
+    def create_optimizer(self, env, seed, morph_configs, created_at=0, is_candidate=False, parents=None):
         assert env != None
 
         optim_id, niche_fn = construct_niche_fns_from_env(args=self.args, env=env, seed=seed)
@@ -69,21 +69,27 @@ class MutliPPOOptimizer(object):
 
         num_agents = len(morph_params)
 
+        if parents is None:
+            parents = num_agents*[-1]
         ppo_optimizers = []
         for i in range(num_agents):
             ppo_optimizers.append(PPO(
                 make_niche=niche_fn,
                 morph_params=morph_params[i],
-                optim_id=optim_id))
+                optim_id=optim_id,
+                created_at=created_at,
+                is_candidate=is_candidate,
+                log_file=self.args.log_file,
+                parent=parents[i]))
         
         return ppo_optimizers
 
 
-    def add_optimizer(self, env, seed, morph_params=None, created_at=0):
+    def add_optimizer(self, env, seed, morph_params=None, created_at=0, is_candidate=False, parents=None):
         '''
         add a new env-agent(s) pair
         '''
-        opt_list = self.create_optimizer(env, seed, morph_params, created_at)
+        opt_list = self.create_optimizer(env, seed, morph_params, created_at, is_candidate, parents)
         optim_id = opt_list[0].optim_id
         self.optimizers[optim_id] = opt_list
 
@@ -159,7 +165,7 @@ class MutliPPOOptimizer(object):
                 logger.info("niche {} created at {} start_score {} current_self_evals {}".format(
                     optim_id, o.created_at, o.start_score, o.score))
                 niche_evals.append(o.score)
-            if np.mean(niche_evals) >= self.args.repro_threshold:
+            if np.max(niche_evals) >= self.args.repro_threshold:
                 repro_candidates.append(optim_id)
 
         logger.debug("candidates to reproduce")
@@ -169,11 +175,12 @@ class MutliPPOOptimizer(object):
 
         return repro_candidates, delete_candidates
 
-    def evaluate_population_transfer(self, optimizers):
+    def evaluate_population_transfer(self, new_opt, optimizers):
         scores = []
         morph_params = []
         for opt in optimizers:
-            scores.append(opt.score)
+            score = new_opt.eval_agent(opt.actor)
+            scores.append(score)
             morph_params.append(opt.morph_params)
         sorted_indices = np.argsort(scores)
         best_scores = np.array(scores)[sorted_indices][-self.args.init_num_morphs:][::-1]
@@ -190,14 +197,14 @@ class MutliPPOOptimizer(object):
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
                 morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
-                opt_list = self.create_optimizer(env=new_env_config, seed=seed, morph_params=morph_params)
+                opt_list = self.create_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params, is_candidate=True)
                 scores = []
                 for i in range(len(opt_list)):
                     scores.append(opt_list[i].eval_agent())
                 del opt_list
-                if self.pass_mc(np.mean(scores)):
+                if self.pass_mc(np.max(scores)):
                     novelty_score = compute_novelty_vs_archive(self.env_archive, new_env_config, k=5)
-                    logger.debug("{} passed mc, novelty score {}".format(np.mean(scores), novelty_score))
+                    logger.debug("{} passed mc, novelty score {}".format(np.max(scores), novelty_score))
                     child_list.append((new_env_config, seed, parent_optim_id, novelty_score))
 
         #sort child list according to novelty for high to low
@@ -224,12 +231,19 @@ class MutliPPOOptimizer(object):
                 new_env_config, seed, parent_optim_id, _ = child
                 morph_params = self.optimizers[parent_optim_id][0].morph_params
                 # targeted transfer
+                o = self.create_optimizer(new_env_config, seed, morph_params, created_at=iteration, is_candidate=True)[0]
                 parent_opts = []
                 for opt_list in self.optimizers.values():
                     parent_opts += opt_list
-                scores, morph_params = self.evaluate_population_transfer(parent_opts)
+                scores, morph_params = self.evaluate_population_transfer(o, parent_opts)
+                parents = []
+                for i in range(len(morph_params)):
+                    parent = '{}_m_{}'.format(parent_optim_id, '_'.join([str(x) for x in morph_params[i]]))
+                    parents.append(parent)
+                del o
                 if self.pass_mc(np.mean(scores)):
-                    self.add_optimizer(env=new_env_config, seed=seed, morph_params=morph_params, created_at=iteration)
+                    self.add_optimizer(env=new_env_config, seed=seed, morph_params=morph_params, created_at=iteration,
+                                       is_candidate=False, parents=parents)
                     admitted += 1
                     if admitted >= max_admitted:
                         break
@@ -288,18 +302,22 @@ class MutliPPOOptimizer(object):
             fittest_agents = len(groups) * [None]
             for k, group in enumerate(groups):
                 for i in range(len(group)):
-                    score = group[i].eval_agent()
+                    score = group[i].score
                     if score > fittest_scores[k]:
                         fittest_scores[k] = score
                         fittest_agents[k] = group[i]
                         
             child_morph_params = []
+            parents = []
             for agent in fittest_agents:
                 parent_morph_params = agent.morph_params
-                child_morph_params.append(self.mutate_morph_params(parent_morph_params))
+                child_morph = self.mutate_morph_params(parent_morph_params)
+                child_morph_params.append(child_morph)
+                parents.append('{}_m_{}'.format(optim_id,'_'.join([str(x) for x in child_morph])))
 
             child_list = self.create_optimizer(env=self.env_registry[optim_id], 
-                seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration)
+                seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration,
+                is_candidate=False, parents=parents)
             self.add_agents_to_env(optim_id, child_list)
 
     def ind_ppo_step(self, iteration):

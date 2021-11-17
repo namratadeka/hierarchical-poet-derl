@@ -1,11 +1,14 @@
+import logging
 import numpy as np
 from os.path import join
+from .logger import CSVLogger
 
 import torch
 from torch.distributions import MultivariateNormal
 
 from .niches.box2d.actor_critic import Actor, Critic
 
+logger = logging.getLogger(__name__)
 
 def initialize_weights(m):
   if isinstance(m, torch.nn.Conv2d):
@@ -23,7 +26,12 @@ def learn_util(agent):
     agent.learn()
 
 class PPO:
-    def __init__(self, make_niche, morph_params, optim_id, created_at=0):
+    def __init__(self, make_niche, 
+                 morph_params, optim_id, 
+                 created_at=0, 
+                 is_candidate=False,
+                 log_file='',
+                 parent=-1):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._init_hyperparameters()
 
@@ -36,13 +44,28 @@ class PPO:
         self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
         self.cov_mat = torch.diag(self.cov_var).to(self.device)
 
+        self.morph_params = morph_params
         self.morph_id = 'm_%s'%'_'.join([str(x) for x in morph_params])
 
         self.optim_id = optim_id
+        self.parent = parent
 
         self.created_at = created_at
         self.start_score = None
         self.score = None
+
+        if not is_candidate:
+            log_path = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '_' + self.morph_id + '.log'
+            self.data_logger = CSVLogger(log_path, [
+                'iteration',
+                'env',
+                'score',
+                'parent'
+            ])
+            logger.info('Optimizer {} created!'.format(optim_id))
+        
+        self.iteration = None
+        self.log_data = {}
 
     def _init_hyperparameters(self):
         self.timesteps_per_batch = 2000
@@ -52,6 +75,13 @@ class PPO:
         self.clip = 0.2
         self.entropy_beta = 0.1
         self.minibatch_size = 256
+
+    def save_to_logger(self, iteration):
+        self.log_data['iteration'] = iteration
+        self.log_data['env'] = self.optim_id
+        self.log_data['score'] = self.score
+        self.log_data['parent'] = self.parent
+        self.data_logger.log(**self.log_data)
         
     def _build_network(self):
         self.actor = Actor().to(self.device)
@@ -67,8 +97,8 @@ class PPO:
         critic_params = list(self.critic.parameters())
         self.critic_optim = torch.optim.Adam(critic_params, lr=0.00025)
     
-    def get_action(self, state):
-        mean = self.actor(state).squeeze()
+    def get_action(self, state, actor:Actor):
+        mean = actor(state).squeeze()
         dist = MultivariateNormal(mean, self.cov_mat)
 
         action = dist.sample()
@@ -105,7 +135,7 @@ class PPO:
                     self.niche.model.env.render()
                 t += 1
                 batch_states.append(state)
-                action, log_prob = self.get_action(state)
+                action, log_prob = self.get_action(state, self.actor)
                 for k in range(4):
                     state, rew, done, _ = self.niche.model.env.step(action)
                 
@@ -127,11 +157,13 @@ class PPO:
 
         return batch_states, batch_actions, batch_logprobs, batch_rtgs, batch_lens
 
-    def eval_agent(self, num_episodes=5, max_episode_length=2000):
+    def eval_agent(self, actor:Actor=None, num_episodes:int=5, max_episode_length:int=2000):
         '''
         Evaluate agent over multiple episodes and return average total reward.
         '''
-        self.actor.eval()
+        if actor is None:
+            actor = self.actor
+        actor.eval()
         reward_list = []
         for i in range(num_episodes):
             total_reward = 0
@@ -139,7 +171,7 @@ class PPO:
             t = 0
             while t < max_episode_length:
                 t += 1
-                action, _ = self.get_action(state)
+                action, _ = self.get_action(state, actor)
                 state, reward, done, _ = self.niche.model.env.step(action)
                 total_reward += reward
                 if done:
@@ -159,7 +191,7 @@ class PPO:
 
         return V, log_probs
 
-    def learn(self, total_timesteps=100000, render=False):
+    def learn(self, total_timesteps=1000, render=False):
         t_so_far = 0
         itr = 0
         while t_so_far < total_timesteps:
@@ -225,7 +257,3 @@ class PPO:
         batch_rtgs = batch_rtgs[idx]
 
         return batch_states, batch_actions, batch_logprobs, batch_rtgs
-
-    def save_to_logger(self, iteration):
-        #TODO
-        pass
