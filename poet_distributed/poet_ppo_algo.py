@@ -196,12 +196,12 @@ class MutliPPOOptimizer(object):
             new_env_config, seed, parent_optim_id = self.get_new_env(parent_list)
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
-                morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
-                opt_list = self.create_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params, is_candidate=True)
+                morph_params = [self.optimizers[parent_optim_id][0].morph_params]
+                new_env_opt = self.create_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params, is_candidate=True)[0]
                 scores = []
-                for i in range(len(opt_list)):
-                    scores.append(opt_list[i].eval_agent())
-                del opt_list
+                for agent in self.optimizers[parent_optim_id]:
+                    scores.append(new_env_opt.eval_agent(agent.actor))
+                del new_env_opt
                 if self.pass_mc(np.max(scores)):
                     novelty_score = compute_novelty_vs_archive(self.env_archive, new_env_config, k=5)
                     logger.debug("{} passed mc, novelty score {}".format(np.max(scores), novelty_score))
