@@ -28,7 +28,7 @@ python -u master.py \
   --returns_normalization=centered_ranks \
   --envs stump pit roughness \
   --max_num_envs=20 \
-  --adjust_interval=2 \
+  --adjust_interval=1 \
   --propose_with_adam \
   --steps_before_transfer=25 \
   --num_workers 32 \

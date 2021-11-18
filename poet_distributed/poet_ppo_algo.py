@@ -2,10 +2,11 @@ from .logger import CSVLogger
 import logging
 logger = logging.getLogger(__name__)
 import numpy as np
+from tqdm import tqdm
 from collections import OrderedDict
 from joblib import Parallel, delayed
 
-from poet_distributed.ppo import PPO, learn_util
+from poet_distributed.ppo import PPO, learn_util, eval_util
 from poet_distributed.niches.box2d.env import Env_config
 from poet_distributed.reproduce_ops import Reproducer
 from poet_distributed.novelty import compute_novelty_vs_archive
@@ -105,6 +106,8 @@ class MutliPPOOptimizer(object):
         with open(env_config_file,'w') as f:
             json.dump(record, f)
 
+        return optim_id
+
     def delete_optimizer(self, optim_id):
         assert optim_id in self.optimizers.keys()
         #assume optim_id == env_id for single_env niches
@@ -175,18 +178,22 @@ class MutliPPOOptimizer(object):
 
         return repro_candidates, delete_candidates
 
-    def evaluate_population_transfer(self, new_opt, optimizers):
-        scores = []
-        morph_params = []
-        for opt in optimizers:
-            score = new_opt.eval_agent(opt.actor)
-            scores.append(score)
-            morph_params.append(opt.morph_params)
+    def evaluate_population_transfer(self, new_opts, optimizers):
+        scores = Parallel(n_jobs=self.args.num_workers)(
+            delayed(eval_util)(new_opts[i], optimizers[i])
+            for i in tqdm(range(len(optimizers)), desc="Evaluating all agents on child env {}".format(new_opts[0].optim_id))
+        )
+        morph_params = [x.morph_params for x in optimizers]
+        actor_states = [x.actor.state_dict() for x in optimizers]
+        critic_states = [x.critic.state_dict() for x in optimizers]
+
         sorted_indices = np.argsort(scores)
         best_scores = np.array(scores)[sorted_indices][-self.args.init_num_morphs:][::-1]
-        best_morph_params = np.array(morph_params[sorted_indices][-self.args.init_num_morphs:][::-1])
+        best_morph_params = np.array(morph_params)[sorted_indices][-self.args.init_num_morphs:][::-1]
+        best_actors = np.array(actor_states)[sorted_indices][-self.args.init_num_morphs:][::-1]
+        best_critics = np.array(critic_states)[sorted_indices][-self.args.init_num_morphs:][::-1]
 
-        return best_scores, best_morph_params
+        return best_scores, best_morph_params, best_actors, best_critics
         
     def get_child_list(self, parent_list, max_children):
         child_list = []
@@ -196,12 +203,14 @@ class MutliPPOOptimizer(object):
             new_env_config, seed, parent_optim_id = self.get_new_env(parent_list)
             mutation_trial += 1
             if self.pass_dedup(new_env_config):
-                morph_params = [self.optimizers[parent_optim_id][0].morph_params]
-                new_env_opt = self.create_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params, is_candidate=True)[0]
-                scores = []
-                for agent in self.optimizers[parent_optim_id]:
-                    scores.append(new_env_opt.eval_agent(agent.actor))
-                del new_env_opt
+                morph_params = [x.morph_params for x in self.optimizers[parent_optim_id]]
+                new_agents = self.create_optimizer(env=new_env_config, seed=seed, morph_configs=morph_params, is_candidate=True)
+                scores = Parallel(n_jobs=self.args.num_workers)(
+                    delayed(eval_util)(new_agents[i], self.optimizers[parent_optim_id][i])
+                    for i in tqdm(range(len(new_agents)), 
+                    desc='Evaluating agents from parent env {} on child env {}'.format(parent_optim_id, new_agents[0].optim_id))
+                )
+                del new_agents
                 if self.pass_mc(np.max(scores)):
                     novelty_score = compute_novelty_vs_archive(self.env_archive, new_env_config, k=5)
                     logger.debug("{} passed mc, novelty score {}".format(np.max(scores), novelty_score))
@@ -211,7 +220,7 @@ class MutliPPOOptimizer(object):
         child_list = sorted(child_list,key=lambda x: x[3], reverse=True)
         return child_list
 
-    def adjust_envs_niches(self, iteration, steps_before_adjust, max_num_envs=None, max_children=8, max_admitted=1):
+    def adjust_envs_niches(self, iteration, steps_before_adjust, max_num_envs=None, max_children=1, max_admitted=1):
         if iteration > 0 and iteration % steps_before_adjust == 0:
             list_repro, list_delete = self.check_optimizer_status()
             if len(list_repro) == 0:
@@ -229,21 +238,24 @@ class MutliPPOOptimizer(object):
             admitted = 0
             for child in child_list:
                 new_env_config, seed, parent_optim_id, _ = child
-                morph_params = self.optimizers[parent_optim_id][0].morph_params
                 # targeted transfer
-                o = self.create_optimizer(new_env_config, seed, morph_params, created_at=iteration, is_candidate=True)[0]
                 parent_opts = []
                 for opt_list in self.optimizers.values():
                     parent_opts += opt_list
-                scores, morph_params = self.evaluate_population_transfer(o, parent_opts)
-                parents = []
-                for i in range(len(morph_params)):
-                    parent = '{}_m_{}'.format(parent_optim_id, '_'.join([str(x) for x in morph_params[i]]))
-                    parents.append(parent)
+                morph_params = [x.morph_params for x in parent_opts]
+                o = self.create_optimizer(new_env_config, seed, morph_params, created_at=iteration, is_candidate=True)
+                scores, morph_params, actor_states, critic_states = self.evaluate_population_transfer(o, parent_opts)
                 del o
                 if self.pass_mc(np.mean(scores)):
-                    self.add_optimizer(env=new_env_config, seed=seed, morph_params=morph_params, created_at=iteration,
+                    parents = []
+                    for i in range(len(morph_params)):
+                        parent = '{}_m_{}'.format(parent_optim_id, '_'.join([str(x) for x in morph_params[i]]))
+                        parents.append(parent)
+                    new_optim_id = self.add_optimizer(env=new_env_config, seed=seed, morph_params=morph_params, created_at=iteration,
                                        is_candidate=False, parents=parents)
+                    for i, opt in enumerate(self.optimizers[new_optim_id]):
+                        opt.actor.load_state_dict(actor_states[i])
+                        opt.critic.load_state_dict(critic_states[i])
                     admitted += 1
                     if admitted >= max_admitted:
                         break
@@ -306,14 +318,14 @@ class MutliPPOOptimizer(object):
                     if score > fittest_scores[k]:
                         fittest_scores[k] = score
                         fittest_agents[k] = group[i]
-                        
+
             child_morph_params = []
             parents = []
             for agent in fittest_agents:
                 parent_morph_params = agent.morph_params
                 child_morph = self.mutate_morph_params(parent_morph_params)
                 child_morph_params.append(child_morph)
-                parents.append('{}_m_{}'.format(optim_id,'_'.join([str(x) for x in child_morph])))
+                parents.append('{}_m_{}'.format(optim_id,'_'.join([str(x) for x in parent_morph_params])))
 
             child_list = self.create_optimizer(env=self.env_registry[optim_id], 
                 seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration,

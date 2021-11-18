@@ -25,6 +25,11 @@ def initialize_weights(m):
 def learn_util(agent):
     agent.learn()
 
+def eval_util(agent1, agent2):
+    agent1.set_morph_params(agent2.morph_params)
+    score = agent1.eval_agent(agent2.actor)
+    return score
+
 class PPO:
     def __init__(self, make_niche, 
                  morph_params, optim_id, 
@@ -39,13 +44,10 @@ class PPO:
         self._build_optimizer()
 
         self.niche = make_niche()
-        self.niche.model.env.set_morphology(morph_params)
+        self.set_morph_params(morph_params)
         self.act_dim = self.niche.model.env.action_space.shape[0]
         self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
         self.cov_mat = torch.diag(self.cov_var).to(self.device)
-
-        self.morph_params = morph_params
-        self.morph_id = 'm_%s'%'_'.join([str(x) for x in morph_params])
 
         self.optim_id = optim_id
         self.parent = parent
@@ -75,6 +77,11 @@ class PPO:
         self.clip = 0.2
         self.entropy_beta = 0.1
         self.minibatch_size = 256
+
+    def set_morph_params(self, morph_params):
+        self.morph_params = morph_params
+        self.niche.model.env.set_morphology(morph_params)
+        self.morph_id = 'm_%s'%'_'.join([str(x) for x in morph_params])
 
     def save_to_logger(self, iteration):
         self.log_data['iteration'] = iteration
@@ -191,7 +198,7 @@ class PPO:
 
         return V, log_probs
 
-    def learn(self, total_timesteps=1000, render=False):
+    def learn(self, total_timesteps=100000, render=False):
         t_so_far = 0
         itr = 0
         while t_so_far < total_timesteps:

@@ -65,7 +65,7 @@ def main():
     parser.add_argument('--normalize_grads_by_noise_std', action='store_true', default=False)
     parser.add_argument('--propose_with_adam', action='store_true', default=False)
     parser.add_argument('--checkpointing', action='store_true', default=False)
-    parser.add_argument('--adjust_interval', type=int, default=4)
+    parser.add_argument('--adjust_interval', type=int, default=1)
     parser.add_argument('--returns_normalization', default='normal')
     parser.add_argument('--stochastic', action='store_true', default=False)
     parser.add_argument('--envs', nargs='+')
