@@ -279,8 +279,8 @@ class PPO:
         self.critic.eval()
         save_dict = {
             'iteration': self.iteration,
-            'actor_opt': self.actor_opt.state_dict(),
-            'critic_opt': self.critic_opt.state_dict(),
+            'actor_opt': self.actor_optim.state_dict(),
+            'critic_opt': self.critic_optim.state_dict(),
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
             'env': self.optim_id,
