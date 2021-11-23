@@ -42,6 +42,7 @@ def run_main(args):
 def main():
     parser = ArgumentParser()
     parser.add_argument('log_file')
+    parser.add_argument('--model_dir', required=True, type=str, help='path to model directory')
     parser.add_argument('--init', default='random')
     parser.add_argument('--learning_rate', type=float, default=0.01)
     parser.add_argument('--lr_decay', type=float, default=0.9999)
@@ -72,7 +73,7 @@ def main():
     parser.add_argument('--start_from', default=None)  # Json file to start from
     parser.add_argument('--max_num_morphs', type=int, default=10)
     parser.add_argument('--morph_evolve_interval', type=int, default=4)
-    parser.add_argument('--init_num_morphs', type=int, default=4)
+    parser.add_argument('--init_num_morphs', type=int, default=2)
 
     args = parser.parse_args()
     logger.info(args)

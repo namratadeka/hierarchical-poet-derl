@@ -1,3 +1,4 @@
+import os
 import logging
 import numpy as np
 from os.path import join
@@ -22,8 +23,8 @@ def initialize_weights(m):
       torch.nn.init.kaiming_uniform_(m.weight.data)
       torch.nn.init.constant_(m.bias.data, 0)
 
-def learn_util(agent):
-    agent.learn()
+def learn_util(agent, iteration):
+    agent.learn(iteration=iteration)
 
 def eval_util(agent1, agent2):
     agent1.set_morph_params(agent2.morph_params)
@@ -36,6 +37,7 @@ class PPO:
                  created_at=0, 
                  is_candidate=False,
                  log_file='',
+                 model_dir='',
                  parent=-1):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._init_hyperparameters()
@@ -57,7 +59,8 @@ class PPO:
         self.score = None
 
         if not is_candidate:
-            log_path = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '_' + self.morph_id + '.log'
+            self.id = '{}_{}'.format(self.optim_id, self.morph_id)
+            log_path = log_file + '/' + log_file.split('/')[-1] + '.' + self.id + '.log'
             self.data_logger = CSVLogger(log_path, [
                 'iteration',
                 'env',
@@ -65,6 +68,8 @@ class PPO:
                 'parent'
             ])
             logger.info('Optimizer {} created!'.format(optim_id))
+            self.model_dir = join(model_dir, self.id)
+            os.makedirs(self.model_dir, exist_ok=True)
         
         self.iteration = None
         self.log_data = {}
@@ -83,8 +88,8 @@ class PPO:
         self.niche.model.env.set_morphology(morph_params)
         self.morph_id = 'm_%s'%'_'.join([str(x) for x in morph_params])
 
-    def save_to_logger(self, iteration):
-        self.log_data['iteration'] = iteration
+    def save_to_logger(self):
+        self.log_data['iteration'] = self.iteration
         self.log_data['env'] = self.optim_id
         self.log_data['score'] = self.score
         self.log_data['parent'] = self.parent
@@ -198,7 +203,10 @@ class PPO:
 
         return V, log_probs
 
-    def learn(self, total_timesteps=100000, render=False):
+    def learn(self, total_timesteps=100000, render=False, iteration=0):
+        self.actor.train()
+        self.critic.train()
+        self.iteration = iteration
         t_so_far = 0
         itr = 0
         while t_so_far < total_timesteps:
@@ -247,6 +255,7 @@ class PPO:
             
             itr += 1
         self.update_score()
+        self.save()
         
     def avg_reward_per_episode(self, batch_rtgs, batch_lens):
         episodic_rewards = []
@@ -264,3 +273,19 @@ class PPO:
         batch_rtgs = batch_rtgs[idx]
 
         return batch_states, batch_actions, batch_logprobs, batch_rtgs
+
+    def save(self):
+        self.actor.eval()
+        self.critic.eval()
+        save_dict = {
+            'iteration': self.iteration,
+            'actor_opt': self.actor_opt.state_dict(),
+            'critic_opt': self.critic_opt.state_dict(),
+            'actor': self.actor.state_dict(),
+            'critic': self.critic.state_dict(),
+            'env': self.optim_id,
+            'morph_params': self.morph_params,
+            'score': self.score
+        }
+        model_path = join(self.model_dir, '{}_{}.pth'.format(self.iteration, self.score))
+        torch.save(save_dict, model_path)

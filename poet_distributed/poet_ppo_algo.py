@@ -81,10 +81,10 @@ class MutliPPOOptimizer(object):
                 created_at=created_at,
                 is_candidate=is_candidate,
                 log_file=self.args.log_file,
+                model_dir=self.args.model_dir,
                 parent=parents[i]))
         
         return ppo_optimizers
-
 
     def add_optimizer(self, env, seed, morph_params=None, created_at=0, is_candidate=False, parents=None):
         '''
@@ -309,7 +309,7 @@ class MutliPPOOptimizer(object):
     def evolve_morphology(self, iteration):
         for optim_id in self.optimizers:
             agents = self.optimizers[optim_id]
-            groups = np.random.choice(agents, (len(agents)//4, 4), replace=False)
+            groups = np.random.choice(agents, (len(agents)//2, 2), replace=False)
             fittest_scores = -np.inf*np.ones(len(groups))
             fittest_agents = len(groups) * [None]
             for k, group in enumerate(groups):
@@ -337,7 +337,7 @@ class MutliPPOOptimizer(object):
         for agent_list in self.optimizers.values():
             agents += agent_list
         Parallel(n_jobs=self.args.num_workers, verbose=51, backend='threading')(
-            delayed(learn_util)(agent) for agent in agents
+            delayed(learn_util)(agent, iteration) for agent in agents
         )
         if iteration == 0:
             for agent in agents:
@@ -357,4 +357,4 @@ class MutliPPOOptimizer(object):
 
             for opt_list in self.optimizers.values():
                 for o in opt_list:
-                    o.save_to_logger(iteration)
+                    o.save_to_logger()
