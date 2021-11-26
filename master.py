@@ -17,11 +17,31 @@ from argparse import ArgumentParser
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+import torch
+import random
 import numpy as np
 from poet_distributed.es import initialize_master_fiber
 from poet_distributed.poet_algo import MultiESOptimizer
 from poet_distributed.poet_ppo_algo import MutliPPOOptimizer
 
+
+def seed_everything(seed=0, harsh=False):
+    """
+    Seeds all important random functions
+    Args:
+        seed (int, optional): seed value. Defaults to 0.
+        harsh (bool, optional): torch backend deterministic. Defaults to False.
+    """
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    if harsh:
+        torch.backends.cudnn.enabled = False
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
 def run_main(args):
 
@@ -77,7 +97,7 @@ def main():
 
     args = parser.parse_args()
     logger.info(args)
-
+    # seed_everything(seed=args.master_seed)
     run_main(args)
 
 if __name__ == "__main__":

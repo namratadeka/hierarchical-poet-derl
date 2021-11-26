@@ -75,13 +75,15 @@ class PPO:
         self.log_data = {}
 
     def _init_hyperparameters(self):
-        self.timesteps_per_batch = 2000
-        self.max_timesteps_per_episode = 1000
+        self.timesteps_per_batch = 2048
+        self.max_timesteps_per_episode = 1024
         self.gamma = 0.9
-        self.epochs = 4
+        self.epochs = 7
         self.clip = 0.2
-        self.entropy_beta = 0.1
-        self.minibatch_size = 256
+        self.entropy_beta = 0.01
+        self.minibatch_size = 64
+        self.actor_lr = 0.0004
+        self.critic_lr = 0.001
 
     def set_morph_params(self, morph_params):
         self.morph_params = morph_params
@@ -104,10 +106,10 @@ class PPO:
 
     def _build_optimizer(self):
         actor_params = list(self.actor.parameters())
-        self.actor_optim = torch.optim.Adam(actor_params, lr=0.0001, weight_decay=0.001)
+        self.actor_optim = torch.optim.Adam(actor_params, lr=self.actor_lr, weight_decay=0)
 
         critic_params = list(self.critic.parameters())
-        self.critic_optim = torch.optim.Adam(critic_params, lr=0.0001, weight_decay=0.001)
+        self.critic_optim = torch.optim.Adam(critic_params, lr=self.critic_lr, weight_decay=0)
     
     def get_action(self, state, actor:Actor):
         mean = actor(state).squeeze()
@@ -231,8 +233,8 @@ class PPO:
                     V, curr_logprobs = self.evaluate_critic(states, actions)
 
                     A_k = rtgs - V.clone().detach()
-                    #normalize advantages
-                    A_k = (A_k - A_k.mean()) / (A_k.std() + 1e-10)
+                    #normalize advantages over batch
+                    A_k = (A_k - A_k.mean()) / (A_k.std(unbiased=False) + 1e-10)
 
                     ratios = torch.exp(curr_logprobs - log_probs)
 
@@ -285,7 +287,8 @@ class PPO:
             'critic': self.critic.state_dict(),
             'env': self.optim_id,
             'morph_params': self.morph_params,
-            'score': self.score
+            'score': self.score,
+            'parent': self.parent
         }
         model_path = join(self.model_dir, '{}_{}.pth'.format(self.iteration, self.score))
         torch.save(save_dict, model_path)
