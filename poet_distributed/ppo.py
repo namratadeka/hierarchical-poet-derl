@@ -104,10 +104,10 @@ class PPO:
 
     def _build_optimizer(self):
         actor_params = list(self.actor.parameters())
-        self.actor_optim = torch.optim.Adam(actor_params, lr=0.00025)
+        self.actor_optim = torch.optim.Adam(actor_params, lr=0.0001, weight_decay=0.001)
 
         critic_params = list(self.critic.parameters())
-        self.critic_optim = torch.optim.Adam(critic_params, lr=0.00025)
+        self.critic_optim = torch.optim.Adam(critic_params, lr=0.0001, weight_decay=0.001)
     
     def get_action(self, state, actor:Actor):
         mean = actor(state).squeeze()
