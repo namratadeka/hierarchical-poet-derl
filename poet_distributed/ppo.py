@@ -7,7 +7,7 @@ from .logger import CSVLogger
 import torch
 from torch.distributions import MultivariateNormal
 
-from .niches.box2d.actor_critic import Actor, Critic
+from .niches.box2d.actor_critic import Actor_Critic
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def learn_util(agent, iteration):
 
 def eval_util(agent1, agent2):
     agent1.set_morph_params(agent2.morph_params)
-    score = agent1.eval_agent(agent2.actor)
+    score = agent1.eval_agent(agent2.actor_critic)
     return score
 
 class PPO:
@@ -99,21 +99,18 @@ class PPO:
         self.data_logger.log(**self.log_data)
         
     def _build_network(self):
-        self.actor = Actor().to(self.device)
-        self.critic = Critic().to(self.device)
-
-        self.actor.apply(initialize_weights)
-        self.critic.apply(initialize_weights)
+        self.actor_critic = Actor_Critic().to(self.device)
+        self.actor_critic.apply(initialize_weights)
 
     def _build_optimizer(self):
-        actor_params = list(self.actor.parameters())
-        self.actor_optim = torch.optim.Adam(actor_params, lr=self.actor_lr, weight_decay=0)
-
-        critic_params = list(self.critic.parameters())
-        self.critic_optim = torch.optim.Adam(critic_params, lr=self.critic_lr, weight_decay=0)
+        params =list(self.actor_critic.parameters())
+        self.optim = torch.optim.Adam(
+            params, lr=0.0003
+        )
     
-    def get_action(self, state, actor:Actor):
-        mean = actor(state).squeeze()
+    def get_action(self, state, actor:Actor_Critic):
+        mean, _ = actor(state)
+        mean = mean.squeeze()
         dist = MultivariateNormal(mean, self.cov_mat)
 
         action = dist.sample()
@@ -150,7 +147,7 @@ class PPO:
                     self.niche.model.env.render()
                 t += 1
                 batch_states.append(state)
-                action, log_prob = self.get_action(state, self.actor)
+                action, log_prob = self.get_action(state, self.actor_critic)
                 for k in range(self.skip_frames):
                     state, rew, done, _ = self.niche.model.env.step(action)
                 
@@ -172,12 +169,12 @@ class PPO:
 
         return batch_states, batch_actions, batch_logprobs, batch_rtgs, batch_lens
 
-    def eval_agent(self, actor:Actor=None, num_episodes:int=5, max_episode_length:int=2000):
+    def eval_agent(self, actor:Actor_Critic=None, num_episodes:int=5, max_episode_length:int=2000):
         '''
         Evaluate agent over multiple episodes and return average total reward.
         '''
         if actor is None:
-            actor = self.actor
+            actor = self.actor_critic
         actor.eval()
         reward_list = []
         for i in range(num_episodes):
@@ -198,17 +195,15 @@ class PPO:
         self.score = self.eval_agent()
 
     def evaluate_critic(self, states, actions):
-        V = self.critic(states).squeeze()
-
-        mean = self.actor(states).squeeze()
+        mean, V = self.actor_critic(states)
+        mean, V = mean.squeeze(), V.squeeze()
         dist = MultivariateNormal(mean, self.cov_mat)
         log_probs = dist.log_prob(actions)
 
         return V, log_probs
 
-    def learn(self, total_timesteps=100000, render=False, iteration=0):
-        self.actor.train()
-        self.critic.train()
+    def learn(self, total_timesteps=1000, render=False, iteration=0):
+        self.actor_critic.train()
         self.iteration = iteration
         t_so_far = 0
         itr = 0
@@ -248,13 +243,13 @@ class PPO:
                     actor_loss = (-torch.min(surr_1, surr_2)).mean() - entropy
                     critic_loss = torch.nn.MSELoss()(V, rtgs)
 
-                    self.actor_optim.zero_grad()
-                    actor_loss.backward(retain_graph=True)
-                    self.actor_optim.step()
-
-                    self.critic_optim.zero_grad()
-                    critic_loss.backward()
-                    self.critic_optim.step()
+                    loss = critic_loss + actor_loss
+                    self.optim.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        self.actor_critic.parameters(), 0.5
+                    )
+                    self.optim.step()
             
             itr += 1
         self.update_score()
@@ -278,14 +273,11 @@ class PPO:
         return batch_states, batch_actions, batch_logprobs, batch_rtgs
 
     def save(self):
-        self.actor.eval()
-        self.critic.eval()
+        self.actor_critic.eval()
         save_dict = {
             'iteration': self.iteration,
-            'actor_opt': self.actor_optim.state_dict(),
-            'critic_opt': self.critic_optim.state_dict(),
-            'actor': self.actor.state_dict(),
-            'critic': self.critic.state_dict(),
+            'opt': self.optim.state_dict(),
+            'actor_critic': self.actor_critic.state_dict(),
             'env': self.optim_id,
             'env_config': self.niche.model.env.config,
             'morph_params': self.morph_params,

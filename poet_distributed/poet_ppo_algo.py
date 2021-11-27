@@ -190,16 +190,14 @@ class MutliPPOOptimizer(object):
             for i in tqdm(range(len(optimizers)), desc="Evaluating all agents on child env {}".format(new_opts[0].optim_id))
         )
         morph_params = [x.morph_params for x in optimizers]
-        actor_states = [x.actor.state_dict() for x in optimizers]
-        critic_states = [x.critic.state_dict() for x in optimizers]
+        actor_critic_states = [x.actor_critic.state_dict() for x in optimizers]
 
         sorted_indices = np.argsort(scores)
         best_scores = np.array(scores)[sorted_indices][-self.args.init_num_morphs:][::-1]
         best_morph_params = np.array(morph_params)[sorted_indices][-self.args.init_num_morphs:][::-1]
-        best_actors = np.array(actor_states)[sorted_indices][-self.args.init_num_morphs:][::-1]
-        best_critics = np.array(critic_states)[sorted_indices][-self.args.init_num_morphs:][::-1]
+        best_actor_critics = np.array(actor_critic_states)[sorted_indices][-self.args.init_num_morphs:][::-1]
 
-        return best_scores, best_morph_params, best_actors, best_critics
+        return best_scores, best_morph_params, best_actor_critics
         
     def get_child_list(self, parent_list, max_children):
         child_list = []
@@ -250,7 +248,7 @@ class MutliPPOOptimizer(object):
                     parent_opts += opt_list
                 morph_params = [x.morph_params for x in parent_opts]
                 o = self.create_optimizer(new_env_config, seed, morph_params, created_at=iteration, is_candidate=True)
-                scores, morph_params, actor_states, critic_states = self.evaluate_population_transfer(o, parent_opts)
+                scores, morph_params, actor_critic_states = self.evaluate_population_transfer(o, parent_opts)
                 del o
                 if self.pass_mc(np.mean(scores)):
                     parents = []
@@ -260,8 +258,7 @@ class MutliPPOOptimizer(object):
                     new_optim_id = self.add_optimizer(env=new_env_config, seed=seed, morph_params=morph_params, created_at=iteration,
                                        is_candidate=False, parents=parents)
                     for i, opt in enumerate(self.optimizers[new_optim_id]):
-                        opt.actor.load_state_dict(actor_states[i])
-                        opt.critic.load_state_dict(critic_states[i])
+                        opt.actor_critic.load_state_dict(actor_critic_states[i])
                     admitted += 1
                     if admitted >= max_admitted:
                         break
@@ -335,14 +332,13 @@ class MutliPPOOptimizer(object):
                     child_morph = self.mutate_morph_params(parent_morph_params)
                 child_morph_params.append(child_morph)
                 parents.append('{}_{}'.format(optim_id,morph_name(parent_morph_params)))
-                parent_states.append((agent.actor.state_dict(), agent.critic.state_dict()))
+                parent_states.append(agent.actor_critic.state_dict())
 
             child_list = self.create_optimizer(env=self.env_registry[optim_id], 
                 seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration,
                 is_candidate=False, parents=parents)
             for i, child_agent in enumerate(child_list):
-                child_agent.actor.load_state_dict(parent_states[i][0])
-                child_agent.critic.load_state_dict(parent_states[i][1])
+                child_agent.actor_critic.load_state_dict(parent_states[i])
             self.add_agents_to_env(optim_id, child_list)
 
     def ind_ppo_step(self, iteration):
