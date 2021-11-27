@@ -32,7 +32,7 @@ python -u master.py \
   --max_num_envs=14 \
   --adjust_interval=1 \
   --propose_with_adam \
-  --steps_before_transfer=25 \
+  --steps_before_transfer=10 \
   --num_workers 64 \
   --max_num_morphs 5 \
   --morph_evolve_interval 4 \

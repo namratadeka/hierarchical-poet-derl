@@ -3,8 +3,8 @@ import logging
 logger = logging.getLogger(__name__)
 import numpy as np
 from tqdm import tqdm
-from collections import OrderedDict
 from joblib import Parallel, delayed
+from collections import OrderedDict, defaultdict
 
 from poet_distributed.ppo import PPO, learn_util, eval_util
 from poet_distributed.niches.box2d.env import Env_config
@@ -12,6 +12,9 @@ from poet_distributed.reproduce_ops import Reproducer
 from poet_distributed.novelty import compute_novelty_vs_archive
 import json
 
+
+def morph_name(morph):
+    return 'm_{}'.format('_'.join([str(x) for x in morph]))
 
 def construct_niche_fns_from_env(args, env, seed):
     def niche_wrapper(configs, seed):  # force python to make a new lexical scope
@@ -50,6 +53,7 @@ class MutliPPOOptimizer(object):
                 stair_width=[],
                 stair_steps=[])
 
+        self.env_morph_archive = defaultdict(list)
         self.add_optimizer(env=env, seed=args.master_seed)
 
     def create_optimizer(self, env, seed, morph_configs, created_at=0, is_candidate=False, parents=None):
@@ -83,6 +87,8 @@ class MutliPPOOptimizer(object):
                 log_file=self.args.log_file,
                 model_dir=self.args.model_dir,
                 parent=parents[i]))
+            
+            self.env_morph_archive[optim_id].append(morph_name(morph_params[i]))
         
         return ppo_optimizers
 
@@ -321,15 +327,22 @@ class MutliPPOOptimizer(object):
 
             child_morph_params = []
             parents = []
+            parent_states = []
             for agent in fittest_agents:
                 parent_morph_params = agent.morph_params
-                child_morph = self.mutate_morph_params(parent_morph_params)
+                child_morph = parent_morph_params
+                while morph_name(child_morph) in self.env_morph_archive[optim_id]:
+                    child_morph = self.mutate_morph_params(parent_morph_params)
                 child_morph_params.append(child_morph)
-                parents.append('{}_m_{}'.format(optim_id,'_'.join([str(x) for x in parent_morph_params])))
+                parents.append('{}_{}'.format(optim_id,morph_name(parent_morph_params)))
+                parent_states.append((agent.actor.state_dict(), agent.critic.state_dict()))
 
             child_list = self.create_optimizer(env=self.env_registry[optim_id], 
                 seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration,
                 is_candidate=False, parents=parents)
+            for i, child_agent in enumerate(child_list):
+                child_agent.actor.load_state_dict(parent_states[i][0])
+                child_agent.critic.load_state_dict(parent_states[i][1])
             self.add_agents_to_env(optim_id, child_list)
 
     def ind_ppo_step(self, iteration):
@@ -349,6 +362,8 @@ class MutliPPOOptimizer(object):
         for iteration in range(iterations):
             self.adjust_envs_niches(iteration, self.args.adjust_interval * steps_before_transfer,
                                     max_num_envs=self.args.max_num_envs)
+
+            self.update_scores()
             
             if iteration > 0 and iteration % self.args.morph_evolve_interval == 0:
                 self.evolve_morphology(iteration=iteration)
@@ -358,3 +373,9 @@ class MutliPPOOptimizer(object):
             for opt_list in self.optimizers.values():
                 for o in opt_list:
                     o.save_to_logger()
+
+    def update_scores(self):
+        for opt_list in self.optimizers.values():
+            for o in opt_list:
+                if o.score is None:
+                    o.update_score()

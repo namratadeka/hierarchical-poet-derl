@@ -80,10 +80,11 @@ class PPO:
         self.gamma = 0.9
         self.epochs = 7
         self.clip = 0.2
-        self.entropy_beta = 0.01
-        self.minibatch_size = 64
-        self.actor_lr = 0.0004
-        self.critic_lr = 0.001
+        self.entropy_beta = 0 #0.01
+        self.minibatch_size = 256
+        self.actor_lr = 0.00015
+        self.critic_lr = 0.00015
+        self.skip_frames = 4
 
     def set_morph_params(self, morph_params):
         self.morph_params = morph_params
@@ -150,7 +151,7 @@ class PPO:
                 t += 1
                 batch_states.append(state)
                 action, log_prob = self.get_action(state, self.actor)
-                for k in range(4):
+                for k in range(self.skip_frames):
                     state, rew, done, _ = self.niche.model.env.step(action)
                 
                 ep_rews.append(rew)
@@ -286,6 +287,7 @@ class PPO:
             'actor': self.actor.state_dict(),
             'critic': self.critic.state_dict(),
             'env': self.optim_id,
+            'env_config': self.niche.model.env.config,
             'morph_params': self.morph_params,
             'score': self.score,
             'parent': self.parent
