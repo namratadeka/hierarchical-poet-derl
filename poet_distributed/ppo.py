@@ -39,13 +39,13 @@ class PPO:
                  log_file='',
                  model_dir='',
                  parent=-1,
-                 lr_decay=True,
+                 decay_lr=True,
                  lr_end_factor=0.1,
                  lr_decay_iters=200):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._init_hyperparameters()
 
-        self.lr_decay = lr_decay,
+        self.decay_lr = decay_lr
         self.lr_decay_iters = lr_decay_iters
         self.lr_end_factor = lr_end_factor
 
@@ -118,7 +118,7 @@ class PPO:
             eps=1e-5
         )
 
-        if self.lr_decay:
+        if self.decay_lr:
             self.lr_scheduler = torch.optim.lr_scheduler.LinearLR(
                 self.optim,
                 start_factor=1, 
@@ -269,7 +269,7 @@ class PPO:
                     )
                     self.optim.step()
             
-            if self.lr_decay:
+            if self.decay_lr:
                 self.lr_scheduler.step()
             
             itr += 1

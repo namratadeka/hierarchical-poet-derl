@@ -87,7 +87,7 @@ class MutliPPOOptimizer(object):
                 log_file=self.args.log_file,
                 model_dir=self.args.model_dir,
                 parent=parents[i],
-                lr_decay=self.args.lr_decay,
+                decay_lr=self.args.decay_lr,
                 lr_end_factor=self.args.lr_end_factor,
                 lr_decay_iters=self.args.lr_decay_iters))
             
