@@ -86,7 +86,10 @@ class MutliPPOOptimizer(object):
                 is_candidate=is_candidate,
                 log_file=self.args.log_file,
                 model_dir=self.args.model_dir,
-                parent=parents[i]))
+                parent=parents[i],
+                lr_decay=self.args.lr_decay,
+                lr_end_factor=self.args.lr_end_factor,
+                lr_decay_iters=self.args.lr_decay_iters))
             
             self.env_morph_archive[optim_id].append(morph_name(morph_params[i]))
         

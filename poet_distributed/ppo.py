@@ -38,9 +38,16 @@ class PPO:
                  is_candidate=False,
                  log_file='',
                  model_dir='',
-                 parent=-1):
+                 parent=-1,
+                 lr_decay=True,
+                 lr_end_factor=0.1,
+                 lr_decay_iters=200):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._init_hyperparameters()
+
+        self.lr_decay = lr_decay,
+        self.lr_decay_iters = lr_decay_iters
+        self.lr_end_factor = lr_end_factor
 
         self._build_network()
         self._build_optimizer()
@@ -111,12 +118,13 @@ class PPO:
             eps=1e-5
         )
 
-        self.lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-            self.optim,
-            start_factor=1, 
-            end_factor=0.01,
-            total_iters=100
-        )
+        if self.lr_decay:
+            self.lr_scheduler = torch.optim.lr_scheduler.LinearLR(
+                self.optim,
+                start_factor=1, 
+                end_factor=self.lr_end_factor,
+                total_iters=self.lr_decay_iters
+            )
     
     def get_action(self, state, actor:Actor_Critic):
         mean, _ = actor(state)
@@ -261,7 +269,8 @@ class PPO:
                     )
                     self.optim.step()
             
-            self.lr_scheduler.step()
+            if self.lr_decay:
+                self.lr_scheduler.step()
             
             itr += 1
         self.update_score()
