@@ -95,7 +95,7 @@ def main():
     parser.add_argument('--morph_evolve_interval', type=int, default=4)
     parser.add_argument('--init_num_morphs', type=int, default=2)
     parser.add_argument('--decay_lr', action="store_true", help="decay PPO lr linearly?")
-    parser.add_argument('--lr_end_factor', tyoe=float, default=0.1)
+    parser.add_argument('--lr_end_factor', type=float, default=0.1)
     parser.add_argument('--lr_decay_iters', type=int, default=200)
 
     args = parser.parse_args()
