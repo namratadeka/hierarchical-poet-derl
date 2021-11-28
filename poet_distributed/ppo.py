@@ -80,11 +80,13 @@ class PPO:
         self.gamma = 0.9
         self.epochs = 7
         self.clip = 0.2
-        self.entropy_beta = 0 #0.01
+        self.entropy_beta = 0.01
         self.minibatch_size = 256
-        self.actor_lr = 0.00015
-        self.critic_lr = 0.00015
+        self.base_lr = 3e-4
+        self.value_coeff = 0.5
+        self.max_grad_norm = 0.5
         self.skip_frames = 4
+
 
     def set_morph_params(self, morph_params):
         self.morph_params = morph_params
@@ -105,7 +107,15 @@ class PPO:
     def _build_optimizer(self):
         params =list(self.actor_critic.parameters())
         self.optim = torch.optim.Adam(
-            params, lr=0.0003
+            params, lr=self.base_lr,
+            eps=1e-5
+        )
+
+        self.lr_scheduler = torch.optim.lr_scheduler.Linear(
+            self.optim,
+            start_factor=1, 
+            end_factor=0.01,
+            total_iters=100
         )
     
     def get_action(self, state, actor:Actor_Critic):
@@ -202,7 +212,7 @@ class PPO:
 
         return V, log_probs
 
-    def learn(self, total_timesteps=1000, render=False, iteration=0):
+    def learn(self, total_timesteps=100000, render=False, iteration=0):
         self.actor_critic.train()
         self.iteration = iteration
         t_so_far = 0
@@ -230,7 +240,7 @@ class PPO:
 
                     A_k = rtgs - V.clone().detach()
                     #normalize advantages over batch
-                    A_k = (A_k - A_k.mean()) / (A_k.std(unbiased=False) + 1e-10)
+                    A_k = (A_k - A_k.mean()) / (A_k.std(unbiased=False) + 1e-5)
 
                     ratios = torch.exp(curr_logprobs - log_probs)
 
@@ -243,13 +253,15 @@ class PPO:
                     actor_loss = (-torch.min(surr_1, surr_2)).mean() - entropy
                     critic_loss = torch.nn.MSELoss()(V, rtgs)
 
-                    loss = critic_loss + actor_loss
+                    loss = self.value_coeff*critic_loss + actor_loss
                     self.optim.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(
-                        self.actor_critic.parameters(), 0.5
+                        self.actor_critic.parameters(), self.max_grad_norm
                     )
                     self.optim.step()
+            
+            self.lr_scheduler.step()
             
             itr += 1
         self.update_score()
