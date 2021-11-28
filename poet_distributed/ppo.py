@@ -111,7 +111,7 @@ class PPO:
             eps=1e-5
         )
 
-        self.lr_scheduler = torch.optim.lr_scheduler.Linear(
+        self.lr_scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optim,
             start_factor=1, 
             end_factor=0.01,
