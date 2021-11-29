@@ -340,8 +340,9 @@ class MutliPPOOptimizer(object):
             child_list = self.create_optimizer(env=self.env_registry[optim_id], 
                 seed=self.env_seeds[optim_id], morph_configs=child_morph_params, created_at=iteration,
                 is_candidate=False, parents=parents)
-            for i, child_agent in enumerate(child_list):
-                child_agent.actor_critic.load_state_dict(parent_states[i])
+            if not self.args.no_transfer_morph:
+                for i, child_agent in enumerate(child_list):
+                    child_agent.actor_critic.load_state_dict(parent_states[i])
             self.add_agents_to_env(optim_id, child_list)
 
     def ind_ppo_step(self, iteration):

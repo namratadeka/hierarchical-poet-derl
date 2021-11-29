@@ -97,6 +97,7 @@ def main():
     parser.add_argument('--decay_lr', action="store_true", help="decay PPO lr linearly?")
     parser.add_argument('--lr_end_factor', type=float, default=0.1)
     parser.add_argument('--lr_decay_iters', type=int, default=200)
+    parser.add_argument('--no-transfer_morph', action='store_true', help='do not transfer learnt behavior to new morphologies?')
 
     args = parser.parse_args()
     logger.info(args)
