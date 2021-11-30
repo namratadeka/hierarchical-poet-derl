@@ -2,9 +2,9 @@
 
 This repo contains implementation of the POET-DERL algorithm on a custom Biped2dWalker environment. 
 
-[Paired Open-Ended Trailblazer (POET): Endlessly Generating Increasingly Complex and Diverse Learning Environments and Their Solutions](https://arxiv.org/abs/1901.01753) and [Embodied Intelligence via Learning and Evolution](https://arxiv.org/abs/2102.02202) are combined in a hierarchical fashion to co-evolve both environments and agent morphologies.
+[Paired Open-Ended Trailblazer (POET): Endlessly Generating Increasingly Complex and Diverse Learning Environments and Their Solutions](https://arxiv.org/abs/1901.01753) and [Embodied Intelligence via Learning and Evolution (DERL)](https://arxiv.org/abs/2102.02202) are combined in a hierarchical fashion to co-evolve both environments and agent morphologies.
 
-Optimal behaviour for each agent is learnt using PPO[Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347).
+Optimal behaviour for each agent is learnt using [Proximal Policy Optimization Algorithms (PPO)](https://arxiv.org/abs/1707.06347).
 
 An article on Uber Engineering Blog describing POET can be found [here](https://eng.uber.com/poet-open-ended-deep-learning/).
 
