@@ -33,6 +33,7 @@ def eval_util(agent1, agent2):
 
 class PPO:
     def __init__(self, make_niche, 
+                 env_config,
                  morph_params, optim_id, 
                  created_at=0, 
                  is_candidate=False,
@@ -53,6 +54,7 @@ class PPO:
         self._build_optimizer()
 
         self.niche = make_niche()
+        self.niche.model.env.set_env_config(env_config)
         self.set_morph_params(morph_params)
         self.act_dim = self.niche.model.env.action_space.shape[0]
         self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
@@ -300,7 +302,7 @@ class PPO:
             'opt': self.optim.state_dict(),
             'actor_critic': self.actor_critic.state_dict(),
             'env': self.optim_id,
-            'env_config': self.niche.model.env.config,
+            'env_config': self.niche.model.env.config._asdict(),
             'morph_params': self.morph_params,
             'score': self.score,
             'parent': self.parent

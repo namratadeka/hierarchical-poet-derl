@@ -80,6 +80,7 @@ class MutliPPOOptimizer(object):
         for i in range(num_agents):
             ppo_optimizers.append(PPO(
                 make_niche=niche_fn,
+                env_config=env,
                 morph_params=morph_params[i],
                 optim_id=optim_id,
                 created_at=created_at,
