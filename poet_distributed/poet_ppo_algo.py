@@ -2,7 +2,10 @@ from .logger import CSVLogger
 import logging
 logger = logging.getLogger(__name__)
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+from glob import glob
+from os.path import join, splitext
 from joblib import Parallel, delayed
 from collections import OrderedDict, defaultdict
 
@@ -10,7 +13,7 @@ from poet_distributed.ppo import PPO, learn_util, eval_util
 from poet_distributed.niches.box2d.env import Env_config
 from poet_distributed.reproduce_ops import Reproducer
 from poet_distributed.novelty import compute_novelty_vs_archive
-import json
+import json, torch
 
 
 def morph_name(morph):
@@ -41,20 +44,78 @@ class MutliPPOOptimizer(object):
         self.env_reproducer = Reproducer(args)
         self.optimizers = OrderedDict()
         self.env_seeds = OrderedDict()
-
-        env = Env_config(
-                name='flat',
-                ground_roughness=0,
-                pit_gap=[],
-                stump_width=[],
-                stump_height=[],
-                stump_float=[],
-                stair_height=[],
-                stair_width=[],
-                stair_steps=[])
-
         self.env_morph_archive = defaultdict(list)
-        self.add_optimizer(env=env, seed=args.master_seed)
+        self.start_iter = 0
+
+        if args.start_from is None:
+            env = Env_config(
+                    name='flat',
+                    ground_roughness=0,
+                    pit_gap=[],
+                    stump_width=[],
+                    stump_height=[],
+                    stump_float=[],
+                    stair_height=[],
+                    stair_width=[],
+                    stair_steps=[])
+
+            self.add_optimizer(env=env, seed=args.master_seed)
+        else:
+            self.resume_state()
+
+    def resume_state(self):
+        log_dir = join('./logs', 'poet_{}'.format(self.args.start_from))
+        model_dir = join('./models', 'poet_{}'.format(self.args.start_from))
+        env_jsons = glob(join(log_dir, '*.json'))
+        global_last_iter = -1
+        env_info = {}
+        for env_json in env_jsons:
+            env = json.load(open(env_json, 'r'))
+            env_seed = env['seed']
+            env_config = Env_config(
+                    name=env['config']['name'],
+                    ground_roughness=env['config']['ground_roughness'],
+                    pit_gap=env['config']['pit_gap'],
+                    stump_width=env['config']['stump_width'],
+                    stump_height=env['config']['stump_height'],
+                    stump_float=env['config']['stump_float'],
+                    stair_height=env['config']['stair_height'],
+                    stair_width=env['config']['stair_width'],
+                    stair_steps=env['config']['stair_steps'])
+            logs = glob(join(log_dir, 'poet_{}.{}_*.log'.format(self.args.start_from, env['config']['name'])))
+            last_iter = -1
+            for log in logs:
+                data = pd.read_csv(log, header=0)
+                end_iter = data['iteration'].to_numpy()[-1]
+                if end_iter > last_iter:
+                    last_iter = end_iter
+            if last_iter > global_last_iter:
+                global_last_iter = last_iter
+            env_info[env_json] = (last_iter, env_seed, env_config, logs)
+        
+        self.start_iter = global_last_iter + 1
+        envs_to_keep = []
+        for env_json in env_info:
+            if env_info[env_json][0] == global_last_iter:
+                envs_to_keep.append(env_json)
+        for env_json in envs_to_keep:
+            morphs_to_keep = []
+            parents = []
+            itr, seed, config, logs = env_info[env_json]
+            for log in logs:
+                data = pd.read_csv(log, header=0)
+                morph_params = splitext(log.split('m_')[-1])[0]
+                morph_params = [float(x) for x in morph_params.split('_')]
+                if data['iteration'].to_numpy()[-1] == itr:
+                    morphs_to_keep.append(morph_params)
+                    parents.append(data['parent'][0])
+            optim_id = self.add_optimizer(config, seed, morphs_to_keep, created_at=itr+1, is_candidate=False, parents=parents)
+            for agent in self.optimizers[optim_id]:
+                model = glob(join(model_dir, agent.id, '{}*.pth'.format(itr)))[0]
+                weights = torch.load(model)
+                agent.actor_critic.load_state_dict(weights['actor_critic'])
+                agent.optim.load_state_dict(weights['opt'])
+                agent.score = weights['score']
 
     def create_optimizer(self, env, seed, morph_configs, created_at=0, is_candidate=False, parents=None):
         assert env != None
@@ -228,7 +289,7 @@ class MutliPPOOptimizer(object):
         child_list = sorted(child_list,key=lambda x: x[3], reverse=True)
         return child_list
 
-    def adjust_envs_niches(self, iteration, steps_before_adjust, max_num_envs=None, max_children=1, max_admitted=1):
+    def adjust_envs_niches(self, iteration, steps_before_adjust, max_num_envs=None, max_children=3, max_admitted=1):
         if iteration > 0 and iteration % steps_before_adjust == 0:
             list_repro, list_delete = self.check_optimizer_status()
             if len(list_repro) == 0:
@@ -360,7 +421,7 @@ class MutliPPOOptimizer(object):
     def optimize(self, iterations=200,
                  steps_before_transfer=25,
                  **kwargs):
-        for iteration in range(iterations):
+        for iteration in range(self.start_iter, iterations):
             self.adjust_envs_niches(iteration, self.args.adjust_interval * steps_before_transfer,
                                     max_num_envs=self.args.max_num_envs)
 
