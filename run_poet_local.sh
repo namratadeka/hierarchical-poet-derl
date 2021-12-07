@@ -39,5 +39,4 @@ python -u master.py \
   --decay_lr \
   --lr_end_factor=0.1 \
   --lr_decay_iters=200 \
-  --start_from v16b \
   --n_iterations=50000 2>&1 | tee ./ipp/$experiment/run.log
