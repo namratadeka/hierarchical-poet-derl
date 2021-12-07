@@ -168,7 +168,7 @@ class Model:
         return np.random.randn(self.param_count) * stdev
 
 def simulate(model, seed, train_mode=False, render_mode=False, num_episode=5,
-             max_len=-1, env_config_this_sim=None, morph_params_this_sim=None):
+             max_len=-1, env_config_this_sim=None):
     reward_list = []
     t_list = []
 
@@ -186,9 +186,6 @@ def simulate(model, seed, train_mode=False, render_mode=False, num_episode=5,
 
     if env_config_this_sim:
         model.env.set_env_config(env_config_this_sim)
-
-    if morph_params_this_sim is not None:
-        model.env.set_morphology(morph_params_this_sim)
 
     for _ in range(num_episode):
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
+
 from ..core import Niche
 from .model import Model, simulate
 from .env import bipedhard_custom, Env_config
@@ -77,7 +77,7 @@ class Box2DNiche(Niche):
             raise NotImplementedError(
                 'Undefined initialization scheme `{}`'.format(self.init))
 
-    def rollout(self, theta, morph_params, random_state, eval=False):
+    def rollout(self, theta, random_state, eval=False):
         self.model.set_model_params(theta)
         total_returns = 0
         total_length = 0
@@ -87,8 +87,7 @@ class Box2DNiche(Niche):
             seed = self.seed
         for env_config in self.env_configs.values():
             returns, lengths = simulate(
-                self.model, seed=seed, train_mode=not eval, num_episode=1, 
-                env_config_this_sim=env_config, morph_params_this_sim=morph_params)
+                self.model, seed=seed, train_mode=not eval, num_episode=1, env_config_this_sim=env_config)
             total_returns += returns[0]
             total_length += lengths[0]
         return total_returns / len(self.env_configs), total_length

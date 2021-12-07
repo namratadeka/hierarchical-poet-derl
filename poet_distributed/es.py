@@ -79,18 +79,18 @@ def fiber_get_theta(iteration, optim_id):
 def fiber_get_niche(iteration, optim_id):
     return niches[optim_id]
 
-def run_eval_batch_fiber(iteration, optim_id, morph_params, batch_size, rs_seed):
+def run_eval_batch_fiber(iteration, optim_id, batch_size, rs_seed):
     global noise, niches, thetas
     random_state = np.random.RandomState(rs_seed)
     niche = fiber_get_niche(iteration, optim_id)
     theta = fiber_get_theta(iteration, optim_id)
 
-    returns, lengths = niche.rollout_batch((theta for i in range(batch_size)), morph_params,
+    returns, lengths = niche.rollout_batch((theta for i in range(batch_size)),
                                            batch_size, random_state, eval=True)
 
     return EvalResult(returns=returns, lengths=lengths)
 
-def run_po_batch_fiber(iteration, optim_id, morph_params, batch_size, rs_seed, noise_std):
+def run_po_batch_fiber(iteration, optim_id, batch_size, rs_seed, noise_std):
     global noise, niches, thetas
     random_state = np.random.RandomState(rs_seed)
     niche = fiber_get_niche(iteration, optim_id)
@@ -104,11 +104,11 @@ def run_po_batch_fiber(iteration, optim_id, morph_params, batch_size, rs_seed, n
 
     returns[:, 0], lengths[:, 0] = niche.rollout_batch(
         (theta + noise_std * noise.get(noise_idx, len(theta))
-         for noise_idx in noise_inds), morph_params, batch_size, random_state)
+         for noise_idx in noise_inds), batch_size, random_state)
 
     returns[:, 1], lengths[:, 1] = niche.rollout_batch(
         (theta - noise_std * noise.get(noise_idx, len(theta))
-         for noise_idx in noise_inds), morph_params, batch_size, random_state)
+         for noise_idx in noise_inds), batch_size, random_state)
 
     return POResult(returns=returns, noise_inds=noise_inds, lengths=lengths)
 
@@ -117,7 +117,6 @@ class ESOptimizer:
     def __init__(self,
                  fiber_pool,
                  fiber_shared,
-                 morph_params,
                  theta,
                  make_niche,
                  learning_rate,
@@ -147,8 +146,6 @@ class ESOptimizer:
         self.optim_id = optim_id
         assert self.fiber_pool is not None
 
-        self.morph_params = morph_params
-        self.morph_id = 'm_%s'%'_'.join([str(x) for x in morph_params])
         self.theta = theta
         #print(self.theta)
         logger.debug('Optimizer {} optimizing {} parameters'.format(
@@ -207,14 +204,14 @@ class ESOptimizer:
                 'eval_returns_mean_theta_from_others_in_{}'.format(optim_id),
                 'eval_returns_mean_proposal_from_others_in_{}'.format(optim_id),
             ]
-            log_path = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '_' + self.morph_id + '.log'
+            log_path = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '.log'
             self.data_logger = CSVLogger(log_path, log_fields + [
                 'time_elapsed_so_far',
                 'iteration',
             ])
             logger.info('Optimizer {} created!'.format(optim_id))
 
-        self.filename_best = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '_' + self.morph_id + '.best.json'
+        self.filename_best = log_file + '/' + log_file.split('/')[-1] + '.' + optim_id + '.best.json'
         self.log_data = {}
         self.t_start = time.time()
         self.episodes_so_far = 0
@@ -412,7 +409,7 @@ class ESOptimizer:
         for i in range(batches_per_chunk):
             chunk_tasks.append(
                 pool.apply_async(runner, args=(self.iteration,
-                    self.optim_id, self.morph_params, batch_size, rs_seeds[i])+args))
+                    self.optim_id, batch_size, rs_seeds[i])+args))
         return chunk_tasks
 
     def get_chunk(self, tasks):
@@ -574,6 +571,7 @@ class ESOptimizer:
         self_eval_stats = self.get_theta_eval(self_eval_task)
         return self_eval_stats.eval_returns_mean
 
+
     def evaluate_transfer(self, optimizers, propose_with_adam=False):
 
         best_init_score = None
@@ -594,30 +592,3 @@ class ESOptimizer:
                 best_init_theta = np.array(proposed_theta)
 
         return best_init_score, best_init_theta
-
-    def evaluate_population_transfer(self, optimizers, max_num_population, propose_with_adam=False):
-        scores = []
-        thetas = []
-        morph_params = []
-
-        for source_optim in optimizers:
-            score = self.evaluate_theta(source_optim.theta)
-            scores.append(score)
-            thetas.append(source_optim.theta)
-            morph_params.append(source_optim.morph_params)
-
-            task = self.start_step(source_optim.theta)
-            proposed_theta, _ = self.get_step(
-                task, propose_with_adam=propose_with_adam, propose_only=True
-            )
-            score = self.evaluate_theta(proposed_theta)
-            scores.append(score)
-            thetas.append(proposed_theta)
-            morph_params.append(source_optim.morph_params)
-
-        sorted_indices = np.argsort(scores)
-        best_scores = np.array(scores)[sorted_indices][-max_num_population:][::-1]
-        best_thetas = np.array(thetas)[sorted_indices][-max_num_population:][::-1]    
-        best_morph_params = np.array(morph_params[sorted_indices][-max_num_population:][::-1])    
-
-        return best_scores, best_thetas, best_morph_params
