@@ -1,8 +1,10 @@
 # POET
 
-This repo contains implementation of the POET algorithm described in:
+This repo contains implementation of the POET-DERL algorithm on a custom Biped2dWalker environment. 
 
-[Paired Open-Ended Trailblazer (POET): Endlessly Generating Increasingly Complex and Diverse Learning Environments and Their Solutions](https://arxiv.org/abs/1901.01753)
+[Paired Open-Ended Trailblazer (POET): Endlessly Generating Increasingly Complex and Diverse Learning Environments and Their Solutions](https://arxiv.org/abs/1901.01753) and [Embodied Intelligence via Learning and Evolution (DERL)](https://arxiv.org/abs/2102.02202) are combined in a hierarchical fashion to co-evolve both environments and agent morphologies.
+
+Optimal behaviour for each agent is learnt using [Proximal Policy Optimization Algorithms (PPO)](https://arxiv.org/abs/1707.06347).
 
 An article on Uber Engineering Blog describing POET can be found [here](https://eng.uber.com/poet-open-ended-deep-learning/).
 
@@ -10,6 +12,7 @@ An article on Uber Engineering Blog describing POET can be found [here](https://
 
 - [Fiber](https://uber.github.io/fiber/)
 - [OpenAI Gym](https://github.com/openai/gym)
+- [PyTorch](https://pytorch.org/get-started/locally/)
 
 ## Run the code locally
 

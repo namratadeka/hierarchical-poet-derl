@@ -36,7 +36,4 @@ python -u master.py \
   --num_workers 64 \
   --max_num_morphs 5 \
   --morph_evolve_interval 4 \
-  --decay_lr \
-  --lr_end_factor=0.1 \
-  --lr_decay_iters=200 \
   --n_iterations=50000 2>&1 | tee ./ipp/$experiment/run.log

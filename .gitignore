@@ -3,3 +3,10 @@
 __pycache__/*
 env/
 .vscode/
+ipp/
+logs/
+models/
+jobs/
+.ipynb_checkpoints/
+*.npy
+wandb/
