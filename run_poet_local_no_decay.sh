@@ -36,4 +36,5 @@ python -u master.py \
   --num_workers 64 \
   --max_num_morphs 5 \
   --morph_evolve_interval 4 \
+  --start_from v18b \
   --n_iterations=50000 2>&1 | tee ./ipp/$experiment/run.log
