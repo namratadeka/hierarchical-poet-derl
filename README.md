@@ -1,6 +1,6 @@
-# POET
+# Hierarchical-POET-DERL
 
-This repo contains implementation of the POET-DERL algorithm on a custom Biped2dWalker environment. 
+This repo contains implementation of the Hierarchical-POET-DERL algorithm on a custom Biped2dWalker environment. 
 
 [Paired Open-Ended Trailblazer (POET): Endlessly Generating Increasingly Complex and Diverse Learning Environments and Their Solutions](https://arxiv.org/abs/1901.01753) and [Embodied Intelligence via Learning and Evolution (DERL)](https://arxiv.org/abs/2102.02202) are combined in a hierarchical fashion to co-evolve both environments and agent morphologies.
 
