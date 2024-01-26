@@ -8,6 +8,15 @@ Optimal behaviour for each agent is learnt using [Proximal Policy Optimization A
 
 An article on Uber Engineering Blog describing POET can be found [here](https://eng.uber.com/poet-open-ended-deep-learning/).
 
+## Demo Results
+![](demo/best-in-env.gif)
+
+![](demo/co-evolution.gif)
+
+![](demo/rough-evolution.gif)
+
+![](demo/flat-evolution.gif)
+
 ## Requirements
 
 - [Fiber](https://uber.github.io/fiber/)
